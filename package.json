@@ -1,7 +1,7 @@
 {
-  "name": "threads-image-downloader",
+  "name": "social-snap",
   "version": "2.0.0",
-  "description": "A Chrome extension that allows you to download all images from Threads.com and Instagram.com posts with a single click",
+  "description": "Social Snap - A Chrome extension that allows you to download all images from Threads.com and Instagram.com posts with a single click",
   "scripts": {
     "lint": "npm run lint:js && npm run lint:html",
     "lint:js": "eslint *.js",
@@ -21,9 +21,12 @@
   },
   "keywords": [
     "chrome-extension",
-    "threads",
+    "social-media",
     "image-downloader",
-    "batch-download"
+    "batch-download",
+    "threads",
+    "instagram",
+    "social-snap"
   ],
   "author": "",
   "license": "MIT",

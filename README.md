@@ -1,6 +1,6 @@
-# Social Media Image Downloader
+# Social Snap
 
-A Chrome extension that allows you to download all images from Threads.com and Instagram.com posts with a single click.
+Social Snap is a Chrome extension that allows you to download all images from Threads.com and Instagram.com posts with a single click.
 
 ## Features
 
@@ -101,7 +101,7 @@ When you try to use the extension on unsupported pages, you'll see a helpful err
 
 ### File Structure
 ```
-threads-downloader/
+social-snap/
 ├── manifest.json                    # Extension configuration
 ├── src/                            # Source code directory
 │   ├── content/                    # Content Scripts
