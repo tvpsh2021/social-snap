@@ -1,107 +1,107 @@
 // Background Service Worker
 
-// 存儲當前頁面的圖片信息
+// Store current page's image information
 let currentImages = [];
 
-// 監聽來自 content script 的消息
+// Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'imagesExtracted') {
-        currentImages = request.images;
-        console.log(`背景腳本收到 ${request.count} 張圖片信息`);
-    }
+  if (request.action === 'imagesExtracted') {
+    currentImages = request.images;
+    console.log(`Background script received ${request.count} image information`);
+  }
 });
 
-// 處理下載請求
+// Handle download requests
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'downloadImages') {
-        downloadAllImages(request.images);
-        sendResponse({ success: true });
-    } else if (request.action === 'downloadSingleImage') {
-        downloadSingleImage(request.image, request.index);
-        sendResponse({ success: true });
-    }
+  if (request.action === 'downloadImages') {
+    downloadAllImages(request.images);
+    sendResponse({ success: true });
+  } else if (request.action === 'downloadSingleImage') {
+    downloadSingleImage(request.image, request.index);
+    sendResponse({ success: true });
+  }
 });
 
-// 從 URL 中推測文件類型
+// Infer file type from URL
 function getFileExtensionFromUrl(url) {
-    try {
-        // 嘗試從 URL 路徑中提取副檔名
-        const urlObj = new URL(url);
-        const pathname = urlObj.pathname;
-        const match = pathname.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-        if (match) {
-            return match[1].toLowerCase();
-        }
-
-        // 檢查 URL 參數中是否有格式信息
-        const searchParams = urlObj.searchParams;
-        if (searchParams.has('format')) {
-            return searchParams.get('format');
-        }
-
-        // 檢查 URL 中是否包含格式信息
-        if (url.includes('jpg') || url.includes('jpeg')) return 'jpg';
-        if (url.includes('png')) return 'png';
-        if (url.includes('webp')) return 'webp';
-        if (url.includes('gif')) return 'gif';
-
-        // 預設為 jpg
-        return 'jpg';
-    } catch (error) {
-        console.log('無法解析 URL，使用預設副檔名 jpg');
-        return 'jpg';
+  try {
+    // Try to extract file extension from URL path
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const match = pathname.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    if (match) {
+      return match[1].toLowerCase();
     }
+
+    // Check if URL parameters contain format information
+    const searchParams = urlObj.searchParams;
+    if (searchParams.has('format')) {
+      return searchParams.get('format');
+    }
+
+    // Check if URL contains format information
+    if (url.includes('jpg') || url.includes('jpeg')) return 'jpg';
+    if (url.includes('png')) return 'png';
+    if (url.includes('webp')) return 'webp';
+    if (url.includes('gif')) return 'gif';
+
+    // Default to jpg
+    return 'jpg';
+  } catch (error) {
+    console.log('Unable to parse URL, using default extension jpg');
+    return 'jpg';
+  }
 }
 
-// 下載所有圖片的函數
+// Function to download all images
 async function downloadAllImages(images) {
-    for (let i = 0; i < images.length; i++) {
-        const image = images[i];
-        try {
-            // 生成文件名
-            const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
-            const extension = getFileExtensionFromUrl(image.fullSizeUrl);
-            const filename = `threads_image_${timestamp}_${i + 1}.${extension}`;
-
-            // 開始下載
-            await chrome.downloads.download({
-                url: image.fullSizeUrl,
-                filename: filename
-            });
-
-            console.log(`下載圖片 ${i + 1}/${images.length}: ${filename}`);
-
-            // 添加小延遲避免同時下載太多文件
-            await new Promise(resolve => setTimeout(resolve, 500));
-        } catch (error) {
-            console.error(`下載圖片 ${i + 1} 失敗:`, error);
-        }
-    }
-}
-
-// 下載單張圖片的函數
-async function downloadSingleImage(image, index) {
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
     try {
-        // 生成文件名
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
-        const extension = getFileExtensionFromUrl(image.fullSizeUrl);
-        const filename = `threads_image_${timestamp}_${index}.${extension}`;
+      // Generate filename
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+      const extension = getFileExtensionFromUrl(image.fullSizeUrl);
+      const filename = `threads_image_${timestamp}_${i + 1}.${extension}`;
 
-        // 開始下載
-        await chrome.downloads.download({
-            url: image.fullSizeUrl,
-            filename: filename
-        });
+      // Start download
+      await chrome.downloads.download({
+        url: image.fullSizeUrl,
+        filename
+      });
 
-        console.log(`下載單張圖片: ${filename}`);
+      console.log(`Download image ${i + 1}/${images.length}: ${filename}`);
+
+      // Add small delay to avoid downloading too many files simultaneously
+      await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
-        console.error(`下載單張圖片失敗:`, error);
+      console.error(`Download image ${i + 1} failed:`, error);
     }
+  }
 }
 
-// 獲取當前圖片信息的函數
+// Function to download single image
+async function downloadSingleImage(image, index) {
+  try {
+    // Generate filename
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const extension = getFileExtensionFromUrl(image.fullSizeUrl);
+    const filename = `threads_image_${timestamp}_${index}.${extension}`;
+
+    // Start download
+    await chrome.downloads.download({
+      url: image.fullSizeUrl,
+      filename
+    });
+
+    console.log(`Download single image: ${filename}`);
+  } catch (error) {
+    console.error('Download single image failed:', error);
+  }
+}
+
+// Function to get current image information
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'getCurrentImages') {
-        sendResponse({ images: currentImages });
-    }
+  if (request.action === 'getCurrentImages') {
+    sendResponse({ images: currentImages });
+  }
 });
