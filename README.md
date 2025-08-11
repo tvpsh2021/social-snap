@@ -1,91 +1,142 @@
 # Threads Image Downloader
 
-一個 Chrome 擴充功能，可以一鍵下載 Threads.com 貼文中的所有圖片。
+A Chrome extension that allows you to download all images from Threads.com posts with a single click.
 
-## 功能特色
+## Features
 
-- 🖼️ 自動偵測 Threads 貼文中的所有圖片
-- 🔍 顯示圖片縮圖預覽
-- 📊 顯示可下載圖片總數
-- ⬇️ 一鍵批量下載所有圖片
-- 🎯 自動選擇最高解析度的圖片
-- 📁 自動命名下載的圖片檔案
-- 🖱️ 單擊縮圖即可下載個別圖片
-- 🛡️ 智慧過濾留言區圖片
-- 📱 支援 Instagram CDN 安全參數
+- 🖼️ Automatically detect all images in Threads posts
+- 🔍 Display image thumbnail previews
+- 📊 Show total count of downloadable images
+- ⬇️ Batch download all images with one click
+- 🎯 Automatically select highest resolution images
+- 📁 Auto-generate filenames for downloaded images
+- 🖱️ Click thumbnails to download individual images
+- 🛡️ Smart filtering of comment section images
+- 📱 Support for Instagram CDN security parameters
 
-## 安裝步驟
+## Installation
 
-1. 下載或 clone 這個專案到本地
-2. 打開 Chrome 瀏覽器
-3. 進入 `chrome://extensions/`
-4. 開啟右上角的「開發人員模式」
-5. 點擊「載入未封裝項目」
-6. 選擇這個專案的資料夾
-7. 擴充功能就會出現在瀏覽器工具列中
+1. Download or clone this project to your local machine
+2. Open Chrome browser
+3. Navigate to `chrome://extensions/`
+4. Enable "Developer mode" in the top right corner
+5. Click "Load unpacked"
+6. Select this project's folder
+7. The extension will appear in your browser toolbar
 
-## 使用方法
+## Usage
 
-1. 前往任何 Threads.com 的貼文頁面
-2. 點擊瀏覽器工具列中的擴充功能圖示
-3. 等待程式分析頁面中的圖片
-4. 查看縮圖預覽和圖片總數
-5. **批量下載**：點擊「下載所有圖片」按鈕
-6. **單張下載**：點擊任何縮圖即可下載該圖片
-7. 圖片將自動下載到您的預設下載資料夾
+1. Navigate to any Threads.com post page
+2. Click the extension icon in your browser toolbar
+3. Wait for the extension to analyze images on the page
+4. View thumbnail previews and total image count
+5. **Batch download**: Click "Download All Images" button
+6. **Single download**: Click any thumbnail to download that image
+7. Images will be automatically downloaded to your default download folder
 
-## 技術實現
+## Technical Implementation
 
-### 圖片偵測
-- 使用 Content Script 分析頁面 DOM 結構
-- 基於 `<picture>` 標籤識別圖片
-- 透過 `alt` 屬性模式識別貼文圖片
-- 解析 `srcset` 屬性找出最高解析度版本
-- 智慧過濾留言區和非相關圖片
+### Image Detection
+- Uses Content Script to analyze page DOM structure
+- Identifies images based on `<picture>` tags
+- Recognizes post images through `alt` attribute patterns
+- Parses `srcset` attribute to find highest resolution versions
+- Smart filtering of comment section and irrelevant images
 
-### 下載機制
-- 使用 Chrome Downloads API 進行批量下載
-- 自動生成帶時間戳的檔案名稱
-- 智慧檔案副檔名檢測
-- 添加下載間隔避免伺服器壓力
-- 支援 Instagram CDN 安全參數
+### Download Mechanism
+- Uses Chrome Downloads API for batch downloading
+- Auto-generates timestamped filenames
+- Smart file extension detection
+- Adds download intervals to avoid server stress
+- Supports Instagram CDN security parameters
 
-### 檔案結構
+### File Structure
 ```
 threads-downloader/
-├── manifest.json          # 擴充功能配置
-├── content.js             # 內容腳本 (頁面圖片提取)
-├── background.js          # 背景服務 (下載處理)
-├── popup.html            # 彈出視窗界面
-├── popup.js              # 彈出視窗邏輯
-├── icon.svg              # 擴充功能圖示
-└── README.md             # 說明文件
+├── manifest.json          # Extension configuration
+├── content.js             # Content script (page image extraction)
+├── background.js          # Background service (download handling)
+├── popup.html            # Popup window interface
+├── popup.js              # Popup window logic
+├── icon.svg              # Extension icon
+└── README.md             # Documentation
 ```
 
-## 注意事項
+## Notes
 
-- 僅支援 Chrome 瀏覽器 (Manifest V3)
-- 需要在 Threads.com 網站上使用
-- 下載的圖片會保存在瀏覽器預設下載位置
-- 請遵守版權法規，僅下載您有權使用的圖片
+- Only supports Chrome browser (Manifest V3)
+- Must be used on Threads.com website
+- Downloaded images are saved to browser's default download location
+- Please respect copyright laws and only download images you have permission to use
 
-## 故障排除
+## Troubleshooting
 
-### 無法偵測到圖片
-- 確保您在 Threads 貼文頁面上
-- 等待頁面完全載入後再開啟擴充功能
-- 重新整理頁面後重試
+### Cannot Detect Images
+- Ensure you are on a Threads post page
+- Wait for the page to fully load before opening the extension
+- Try refreshing the page and retry
 
-### 下載失敗
-- 檢查瀏覽器下載權限
-- 確保有足夠的磁碟空間
-- 檢查網路連線狀態
+### Download Failed
+- Check browser download permissions
+- Ensure sufficient disk space
+- Check network connection
 
-## 開發者資訊
+## Documentation
 
-這個擴充功能使用 Chrome Extension Manifest V3 開發，主要技術包括：
+This project maintains several documentation files to help developers and contributors. Please read the relevant documentation before starting development:
+
+### 📚 Documentation Index
+
+| File | Purpose | When to Read |
+|------|---------|--------------|
+| **[README.md](./README.md)** | Project overview, installation, and usage instructions | First time users and general project information |
+| **[CONTRIBUTING.md](./CONTRIBUTING.md)** | Development guidelines, code standards, and contribution process | **Required reading before any development work** |
+| **[.cursorrules](./.cursorrules)** | Cursor IDE specific development rules and standards | When using Cursor IDE for development |
+
+### 🛠️ Development Setup
+
+Before starting development, ensure you have the necessary tools:
+
+```bash
+# Install development dependencies
+npm install
+
+# Run code linting
+npm run lint
+
+# Auto-fix linting issues
+npm run lint:fix
+```
+
+## Contributing
+
+If you want to contribute to this project, please read our development guidelines first:
+
+📖 **[CONTRIBUTING.md](./CONTRIBUTING.md)** - **REQUIRED READING** for all developers
+
+**Key development standards summary:**
+- All code, comments, documentation, and commit messages must be in English
+- Use 2-space indentation (no tabs)
+- Follow modern JavaScript development standards
+- Use ESLint for code quality and consistency
+- Use Conventional Commits format for commit messages
+- Ensure code is tested before submission
+
+**We welcome all forms of contributions:**
+- 🐛 Bug reports and error reporting
+- 💡 New feature suggestions
+- 🔧 Fixing existing issues
+- 📝 Documentation improvements
+- 🧪 Adding test coverage
+
+**For AI Assistants and Automated Tools:**
+Please ensure you read and follow all documentation files listed above, especially CONTRIBUTING.md and .cursorrules, before making any code changes.
+
+## Developer Information
+
+This extension is developed using Chrome Extension Manifest V3, with main technologies including:
 - Chrome Extensions API
-- DOM 操作和圖片分析
+- DOM manipulation and image analysis
 - Chrome Downloads API
-- 現代 JavaScript (ES6+)
-- 智慧圖片過濾算法
+- Modern JavaScript (ES6+)
+- Smart image filtering algorithms
