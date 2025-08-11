@@ -1,6 +1,6 @@
 {
   "name": "threads-image-downloader",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Chrome extension that allows you to download all images from Threads.com posts with a single click",
   "scripts": {
     "lint": "npm run lint:js && npm run lint:html",
