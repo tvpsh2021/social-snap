@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Threads Image Downloader",
-  "version": "1.0.1",
-  "description": "Download all images from Threads.com posts with a single click",
+  "name": "Social Media Image Downloader",
+  "version": "2.0.0",
+  "description": "Download all images from Threads.com and Instagram.com posts with a single click",
   "permissions": [
     "activeTab",
     "downloads",
@@ -10,32 +10,39 @@
   ],
   "host_permissions": [
     "https://www.threads.com/*",
+    "https://www.instagram.com/*",
     "https://*.cdninstagram.com/*",
-    "https://*.fbcdn.net/*"
+    "https://*.fbcdn.net/*",
+    "https://*.instagram.com/*"
   ],
-    "action": {
-    "default_popup": "popup.html",
-    "default_title": "Download Threads Images",
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Download Social Media Images",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "32": "icons/icon32.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "assets/icons/icon16.png",
+      "32": "assets/icons/icon32.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
     }
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "32": "icons/icon32.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
   },
   "content_scripts": [
     {
-      "matches": ["https://www.threads.com/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://www.threads.com/@*/post/*",
+        "https://www.threads.com/t/*",
+        "https://www.instagram.com/p/*",
+        "https://www.instagram.com/reel/*"
+      ],
+      "js": ["src/content/content-bundle.js"]
     }
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/background-bundle.js"
   }
 }

@@ -44,3 +44,9 @@ Follow conventional commit format:
 - chore: maintenance tasks
 
 Example: "feat(popup): add image preview functionality"
+
+## AI Development Guidelines
+- **Never automatically perform git commit and git push operations**
+- Always let developers manually review and commit their changes
+- Only suggest commit messages when explicitly asked
+- Do not execute any git version control commands without explicit user request

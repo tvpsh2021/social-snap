@@ -5,7 +5,39 @@ All notable changes to the Threads Image Downloader extension will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.1] - 2025-01-11
+## [2.0.0] - 2025-08-11
+
+### Added
+- **Instagram Support**: Full support for Instagram.com posts and reels
+  - Supports regular posts: `https://www.instagram.com/p/postId/`
+  - Supports reels: `https://www.instagram.com/reel/reelId/`
+  - Automatic carousel navigation to load all images in multi-image posts
+  - Platform-specific filename prefixes: `instagram_image_YYYYMMDDHHMMSS_N.jpg`
+
+- **Smart URL Filtering**: Only activates on individual posts, ignores homepage/feed pages
+  - Homepage exclusion: Blocks execution on `https://www.threads.com/` and `https://www.instagram.com/`
+  - Profile page exclusion: Blocks execution on user profile pages
+  - Clear error messages guiding users to navigate to individual posts
+
+- **Modular Architecture**: Complete code refactoring for maintainability
+  - Platform-specific classes: `ThreadsPlatform`, `InstagramPlatform`
+  - Base platform abstraction: `BasePlatform` class
+  - Factory pattern: `PlatformFactory` for automatic platform detection
+  - Extensible design for future platforms (X.com, Facebook.com, etc.)
+
+### Changed
+- **Major Version Bump**: 1.0.1 → 2.0.0 due to breaking changes and new platform support
+- **File Structure**: Reorganized codebase into modular `src/` directory structure
+- **Manifest Configuration**: Updated URL matching patterns to be more precise
+- **Error Handling**: Enhanced error messages with platform-specific guidance
+
+### Technical Implementation
+- **Bundle System**: Created bundle files to avoid ES6 module issues in Chrome extensions
+- **URL Validation**: Multi-layer validation (manifest-level and runtime-level)
+- **Instagram Carousel**: Programmatic navigation through lazy-loaded carousel images
+- **Platform Detection**: Automatic platform detection based on URL patterns
+
+## [1.0.1] - 2025-08-11
 
 ### Fixed
 - **Extension Icon Display**: Fixed issue where extension icon was not showing properly in Chrome toolbar
@@ -21,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated extension version from 1.0 to 1.0.1
 - Updated package.json version to maintain consistency
 
-## [1.0.0] - 2024-12-19
+## [1.0.0] - 2025-08-10
 
 ### Added
 - Initial release of Threads Image Downloader
