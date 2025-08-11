@@ -1,0 +1,46 @@
+# Cursor IDE Rules for Threads Image Downloader
+
+## Language Requirements
+- All code, comments, documentation, and commit messages must be written in English
+- Use descriptive English variable names and function names
+- No Chinese characters in source code
+
+## Code Style
+- Use modern JavaScript ES6+ syntax
+- Prefer const and let over var
+- Use camelCase for variables and functions
+- Use PascalCase for classes and constructors
+- Use kebab-case for file names
+- Add meaningful JSDoc comments for functions
+
+## Chrome Extension Best Practices
+- Follow Manifest V3 standards
+- Use proper Chrome APIs (chrome.downloads, chrome.tabs, etc.)
+- Handle permissions appropriately
+- Implement proper error handling for extension APIs
+
+## File Organization
+- Keep content scripts, background scripts, and popup scripts separate
+- Use consistent file structure
+- Group related functionality together
+
+## Testing
+- Test all changes in Chrome browser
+- Verify functionality on Threads.com
+- Test with various image formats and page layouts
+
+## Documentation
+- Keep README.md updated
+- Document any new features or changes
+- Use clear English in all documentation
+
+## Commit Messages
+Follow conventional commit format:
+- feat: new features
+- fix: bug fixes
+- docs: documentation changes
+- refactor: code refactoring
+- style: formatting changes
+- chore: maintenance tasks
+
+Example: "feat(popup): add image preview functionality"
