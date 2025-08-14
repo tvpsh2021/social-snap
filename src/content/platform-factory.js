@@ -4,6 +4,7 @@
 
 import { ThreadsPlatform } from './platforms/threads-platform.js';
 import { InstagramPlatform } from './platforms/instagram-platform.js';
+import { FacebookPlatform } from './platforms/facebook-platform.js';
 import { PLATFORMS, PLATFORM_HOSTNAMES } from '../shared/constants.js';
 
 export class PlatformFactory {
@@ -18,6 +19,8 @@ export class PlatformFactory {
       return new ThreadsPlatform();
     } else if (hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.INSTAGRAM])) {
       return new InstagramPlatform();
+    } else if (hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK])) {
+      return new FacebookPlatform();
     }
 
     // Return null for unsupported platforms

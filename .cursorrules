@@ -46,6 +46,8 @@ Follow conventional commit format:
 Example: "feat(popup): add image preview functionality"
 
 ## AI Development Guidelines
+- **Always read all *.md files before starting development work**
+- **Please communicate with me in Traditional Chinese**
 - **Never automatically perform git commit and git push operations**
 - Always let developers manually review and commit their changes
 - Only suggest commit messages when explicitly asked

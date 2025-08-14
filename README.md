@@ -1,10 +1,10 @@
 # Social Snap
 
-Social Snap is a Chrome extension that allows you to download all images from Threads.com and Instagram.com posts with a single click.
+Social Snap is a Chrome extension that allows you to download all images from Threads.com, Instagram.com, and Facebook.com posts with a single click.
 
 ## Features
 
-- 🖼️ **Multi-Platform Support**: Works on both Threads.com and Instagram.com
+- 🖼️ **Multi-Platform Support**: Works on Threads.com, Instagram.com, and Facebook.com
 - 🎯 **Smart URL Filtering**: Only activates on individual posts, ignores homepage/feed pages
 - 🔍 Display image thumbnail previews
 - 📊 Show total count of downloadable images
@@ -28,10 +28,11 @@ Social Snap is a Chrome extension that allows you to download all images from Th
 
 ## Usage
 
-1. Navigate to any **individual post** on **Threads.com** or **Instagram.com**
+1. Navigate to any **individual post** on **Threads.com**, **Instagram.com**, or **Facebook.com**
    - ✅ Supported: `https://www.threads.com/@username/post/postId`
    - ✅ Supported: `https://www.instagram.com/p/postId/`
-   - ❌ Not supported: Homepage feeds (`https://www.threads.com/`, `https://www.instagram.com/`)
+   - ✅ Supported: `https://www.facebook.com/photo/?fbid=photoId`
+   - ❌ Not supported: Homepage feeds (`https://www.threads.com/`, `https://www.instagram.com/`, `https://www.facebook.com/`)
 2. Click the extension icon in your browser toolbar
 3. Wait for the extension to analyze images on the page
 4. View thumbnail previews and total image count
@@ -40,6 +41,7 @@ Social Snap is a Chrome extension that allows you to download all images from Th
 7. Images will be automatically downloaded to your default download folder with platform-specific filenames:
    - Threads: `threads_image_YYYYMMDDHHMMSS_1.jpg`
    - Instagram: `instagram_image_YYYYMMDDHHMMSS_1.jpg`
+   - Facebook: `facebook_image_YYYYMMDDHHMMSS_1.jpg`
 
 ## Supported URLs
 
@@ -54,6 +56,10 @@ This extension **only works on individual posts**, not on homepage feeds or prof
 **Instagram.com:**
 - `https://www.instagram.com/p/postId/` - Regular posts
 - `https://www.instagram.com/reel/reelId/` - Reels
+
+**Facebook.com:**
+- `https://www.facebook.com/photo/?fbid=photoId` - Individual photos
+- `https://www.facebook.com/username/photos/photoId` - User photos
 
 ### ❌ Excluded URL Patterns
 
@@ -74,8 +80,9 @@ When you try to use the extension on unsupported pages, you'll see a helpful err
 - **BasePlatform**: Abstract base class for all platforms
 - **ThreadsPlatform**: Specialized extractor for Threads.com
 - **InstagramPlatform**: Specialized extractor for Instagram.com
+- **FacebookPlatform**: Specialized extractor for Facebook.com
 - **PlatformFactory**: Automatically detects and creates appropriate platform instance
-- **Extensible Design**: Easy to add new platforms (X.com, Facebook, etc.)
+- **Extensible Design**: Easy to add new platforms (X.com, etc.)
 
 ### Image Detection
 - **Threads.com**:
@@ -136,8 +143,8 @@ social-snap/
 |----------|--------|----------|
 | **Threads.com** | ✅ Fully Supported | Smart comment filtering, position-based detection |
 | **Instagram.com** | ✅ Fully Supported | Smart carousel navigation, lazy loading handling, profile picture filtering |
+| **Facebook.com** | ✅ Fully Supported | Photo album navigation, individual photo extraction, automatic resolution detection |
 | **X.com (Twitter)** | 🔄 Planned | Coming in future version |
-| **Facebook.com** | 🔄 Planned | Coming in future version |
 
 ## Notes
 
@@ -149,9 +156,10 @@ social-snap/
 ## Troubleshooting
 
 ### Cannot Detect Images
-- Ensure you are on a supported platform (Threads.com or Instagram.com) post page
+- Ensure you are on a supported platform (Threads.com, Instagram.com, or Facebook.com) post page
 - Wait for the page to fully load before opening the extension
 - **For Instagram carousels**: The extension will automatically navigate through all images, which may take 10-30 seconds
+- **For Facebook albums**: The extension will automatically navigate through photo albums
 - Try refreshing the page and retry
 - Check browser console for error messages
 

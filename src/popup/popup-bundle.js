@@ -14,7 +14,11 @@ const BACKGROUND_MESSAGES = {
 };
 
 // === CONSTANTS ===
-const PLATFORM_HOSTNAMES = ['threads.com', 'instagram.com'];
+const PLATFORM_HOSTNAMES = {
+  'threads': 'threads.com',
+  'instagram': 'instagram.com',
+  'facebook': 'facebook.com'
+};
 
 // === STATUS DISPLAY COMPONENT ===
 class StatusDisplay {
@@ -224,10 +228,11 @@ class PopupController {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-      const isSupported = PLATFORM_HOSTNAMES.some(platform => tab.url.includes(platform));
+      const supportedPlatforms = Object.values(PLATFORM_HOSTNAMES);
+      const isSupported = supportedPlatforms.some(platform => tab.url.includes(platform));
 
       if (!isSupported) {
-        this.statusDisplay.showError(`Unsupported platform. This extension works on: ${PLATFORM_HOSTNAMES.join(', ')}`);
+        this.statusDisplay.showError(`Unsupported platform. This extension works on: ${supportedPlatforms.join(', ')}`);
         return;
       }
 

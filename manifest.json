@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Social Snap",
   "version": "2.0.0",
-  "description": "Social Snap - Download all images from Threads.com and Instagram.com posts with a single click",
+  "description": "Social Snap - Download all images from Threads.com, Instagram.com and Facebook.com posts with a single click",
   "permissions": [
     "activeTab",
     "downloads",
@@ -11,6 +11,7 @@
   "host_permissions": [
     "https://www.threads.com/*",
     "https://www.instagram.com/*",
+    "https://www.facebook.com/*",
     "https://*.cdninstagram.com/*",
     "https://*.fbcdn.net/*",
     "https://*.instagram.com/*"
@@ -37,7 +38,9 @@
         "https://www.threads.com/@*/post/*",
         "https://www.threads.com/t/*",
         "https://www.instagram.com/p/*",
-        "https://www.instagram.com/reel/*"
+        "https://www.instagram.com/reel/*",
+        "https://www.facebook.com/photo/*",
+        "https://www.facebook.com/*/photos/*"
       ],
       "js": ["src/content/content-bundle.js"]
     }

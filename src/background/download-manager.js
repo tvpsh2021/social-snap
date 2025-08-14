@@ -39,6 +39,8 @@ export class DownloadManager {
       platformName = 'threads';
     } else if (tab.url.includes('instagram.com')) {
       platformName = 'instagram';
+    } else if (tab.url.includes('facebook.com')) {
+      platformName = 'facebook';
     }
 
     for (let i = 0; i < images.length; i++) {
@@ -80,6 +82,8 @@ export class DownloadManager {
         platformName = 'threads';
       } else if (tab.url.includes('instagram.com')) {
         platformName = 'instagram';
+      } else if (tab.url.includes('facebook.com')) {
+        platformName = 'facebook';
       }
 
       // Generate filename with platform name
