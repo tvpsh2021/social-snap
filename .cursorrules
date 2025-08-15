@@ -6,7 +6,6 @@
 - No Chinese characters in source code
 
 ## Code Style
-- Use modern JavaScript ES6+ syntax
 - Prefer const and let over var
 - Use camelCase for variables and functions
 - Use PascalCase for classes and constructors
@@ -23,11 +22,6 @@
 - Keep content scripts, background scripts, and popup scripts separate
 - Use consistent file structure
 - Group related functionality together
-
-## Testing
-- Test all changes in Chrome browser
-- Verify functionality on Threads.com
-- Test with various image formats and page layouts
 
 ## Documentation
 - Keep README.md updated
