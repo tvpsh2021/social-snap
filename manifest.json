@@ -42,10 +42,28 @@
         "https://www.facebook.com/photo/*",
         "https://www.facebook.com/*/photos/*"
       ],
-      "js": ["src/content/content-bundle.js"]
+      "js": ["src/content/content-main.js"],
+      "type": "module"
     }
   ],
   "background": {
-    "service_worker": "src/background/background-bundle.js"
-  }
+    "service_worker": "src/background/background-main.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/shared/utils/*.js",
+        "src/shared/constants/*.js"
+      ],
+      "matches": [
+        "https://www.threads.com/*",
+        "https://www.instagram.com/*",
+        "https://www.facebook.com/*"
+      ]
+    }
+  ]
 }

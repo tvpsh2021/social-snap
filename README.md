@@ -76,65 +76,118 @@ When you try to use the extension on unsupported pages, you'll see a helpful err
 
 ## Technical Implementation
 
-### Multi-Platform Architecture
-- **BasePlatform**: Abstract base class for all platforms
-- **ThreadsPlatform**: Specialized extractor for Threads.com
-- **InstagramPlatform**: Specialized extractor for Instagram.com
-- **FacebookPlatform**: Specialized extractor for Facebook.com
-- **PlatformFactory**: Automatically detects and creates appropriate platform instance
-- **Extensible Design**: Easy to add new platforms (X.com, etc.)
+### Refactored Architecture (2024)
 
-### Image Detection
-- **Threads.com**:
-  - Uses `<picture>` tags and `alt` attribute patterns (`可能是`)
-  - Smart filtering of comment section images
-  - Position-based detection for main post content
-- **Instagram.com**:
-  - **Smart Carousel Navigation**: Automatically navigates through all images in multi-image posts
-  - Handles Instagram's lazy loading mechanism by programmatically clicking Next button
-  - Detects images in main article containers and carousel/slideshow
-  - Filters out profile pictures and UI elements
-  - Supports all Instagram CDN image formats
-- **Common Features**:
-  - Parses `srcset` attribute to find highest resolution versions
-  - Preserves Instagram CDN security parameters
+The extension has been completely refactored to follow modern software architecture principles with a clean, modular, and extensible design:
 
-### Download Mechanism
-- Uses Chrome Downloads API for batch downloading
-- Auto-generates timestamped filenames
-- Smart file extension detection
-- Adds download intervals to avoid server stress
-- Supports Instagram CDN security parameters
-
-### File Structure
+#### **Core Architecture Layers**
 ```
-social-snap/
-├── manifest.json                    # Extension configuration
-├── src/                            # Source code directory
-│   ├── content/                    # Content Scripts
-│   │   ├── platforms/             # Platform-specific logic
-│   │   │   ├── base-platform.js   # Base platform class
-│   │   │   ├── threads-platform.js # Threads.com handler
-│   │   │   └── instagram-platform.js # Instagram.com handler
-│   │   ├── platform-factory.js    # Platform detection & creation
-│   │   └── content-main.js         # Main content script
-│   ├── popup/                      # Popup UI & Logic
-│   │   ├── components/            # UI Components
-│   │   │   ├── image-grid.js      # Image grid display
-│   │   │   └── status-display.js   # Status messages
-│   │   ├── popup-main.js          # Main popup controller
-│   │   └── popup.html             # Popup interface
-│   ├── background/                 # Background Scripts
-│   │   ├── download-manager.js     # Download handling
-│   │   └── background-main.js      # Main background service
-│   └── shared/                     # Shared Modules
-│       ├── constants.js            # App constants
-│       ├── message-types.js        # Message type definitions
-│       └── utils.js                # Utility functions
-├── assets/                         # Static Assets
-│   ├── icons/                     # Extension icons
-│   └── icon.svg                   # Source icon
-└── README.md                       # Documentation
+┌─────────────────────────────────────────────────────────────┐
+│                        Popup UI Layer                       │
+├─────────────────────────────────────────────────────────────┤
+│                    Service Layer                            │
+├─────────────────────────────────────────────────────────────┤
+│                 Platform Abstraction Layer                  │
+├─────────────────────────────────────────────────────────────┤
+│                    Core Services                            │
+├─────────────────────────────────────────────────────────────┤
+│                 Chrome Extension APIs                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### **Key Architectural Principles**
+- **Single Responsibility**: Each module has one clear purpose
+- **Dependency Injection**: Services are injected rather than directly instantiated
+- **Interface Segregation**: Small, focused interfaces rather than large ones
+- **Open/Closed Principle**: Open for extension, closed for modification
+
+#### **Core Services**
+- **MessageBusService**: Type-safe inter-component communication with request-response patterns
+- **ErrorHandlerService**: Centralized error handling with custom error types and recovery strategies
+- **LoggingService**: Structured logging with different levels and context tracking
+- **ConfigurationService**: Centralized configuration management with validation
+- **DownloadManagerService**: Enhanced download management with retry logic, progress tracking, and batch processing
+- **NotificationService**: User feedback and notification management
+
+#### **Platform System**
+- **BasePlatformExtractor**: Abstract base class enforcing interface contracts and providing common functionality
+- **PlatformRegistry**: Dynamic platform detection and factory system for creating extractors
+- **ThreadsExtractor**: Specialized extractor for Threads.com with advanced comment filtering
+- **InstagramExtractor**: Enhanced Instagram support with smart carousel navigation and lazy loading
+- **FacebookExtractor**: Facebook post and photo extraction with album navigation
+- **Extensible Design**: Easy to add new platforms through the registry system
+
+#### **Enhanced Image Detection**
+- **Multi-Strategy Extraction**: Each platform uses multiple extraction strategies for maximum reliability
+- **Smart Filtering**: Advanced filtering to exclude UI elements, profile pictures, and comment images
+- **High-Resolution Selection**: Automatic selection of highest quality images from srcset attributes
+- **Metadata Preservation**: Comprehensive metadata tracking including extraction context and timing
+
+#### **Advanced Download System**
+- **Batch Processing**: Concurrent downloads with configurable limits
+- **Retry Mechanism**: Automatic retry with exponential backoff for failed downloads
+- **Progress Tracking**: Real-time progress updates with detailed statistics
+- **Queue Management**: Sophisticated download queue with priority and status tracking
+- **Error Recovery**: Comprehensive error handling with user-friendly messages
+
+### Refactored File Structure
+```
+src/
+├── core/                           # Core Infrastructure
+│   ├── interfaces/                 # Interface definitions
+│   │   ├── IPlatformExtractor.js   # Platform extractor interface
+│   │   ├── IDownloadManager.js     # Download manager interface
+│   │   ├── IMessageBus.js          # Message bus interface
+│   │   ├── IErrorHandler.js        # Error handler interface
+│   │   └── ILogger.js              # Logger interface
+│   ├── services/                   # Core services
+│   │   ├── MessageBusService.js    # Inter-component communication
+│   │   ├── ErrorHandlerService.js  # Centralized error handling
+│   │   ├── LoggingService.js       # Structured logging
+│   │   ├── ConfigurationService.js # Configuration management
+│   │   ├── NotificationService.js  # User notifications
+│   │   └── ServiceContainer.js     # Dependency injection container
+│   └── types/                      # Type definitions
+│       ├── MessageTypes.js         # Message type definitions
+│       ├── ImageTypes.js           # Image data types
+│       ├── ErrorTypes.js           # Error type definitions
+│       └── DownloadTypes.js        # Download-related types
+├── platforms/                      # Platform-specific extractors
+│   ├── base/                       # Base platform functionality
+│   │   ├── BasePlatformExtractor.js # Abstract base class
+│   │   └── PlatformRegistry.js     # Platform detection and factory
+│   ├── threads/                    # Threads.com support
+│   │   └── ThreadsExtractor.js     # Threads-specific extraction
+│   ├── instagram/                  # Instagram.com support
+│   │   └── InstagramExtractor.js   # Instagram-specific extraction
+│   └── facebook/                   # Facebook.com support
+│       └── FacebookExtractor.js    # Facebook-specific extraction
+├── background/                     # Background service worker
+│   ├── BackgroundService.js        # Main background service
+│   ├── DownloadManagerService.js   # Enhanced download management
+│   └── background-main.js          # Service worker entry point
+├── content/                        # Content scripts
+│   ├── ContentService.js           # Content script coordination
+│   ├── ImageExtractionService.js   # Image extraction coordination
+│   └── content-main.js             # Content script entry point
+├── popup/                          # Popup interface
+│   ├── components/                 # Modular UI components
+│   │   ├── ImageGridComponent.js   # Image grid display
+│   │   ├── StatusDisplayComponent.js # Status messages
+│   │   ├── ProgressBarComponent.js # Download progress
+│   │   └── NotificationDisplayComponent.js # Notifications
+│   ├── services/                   # Popup business logic
+│   │   └── PopupService.js         # Popup state management
+│   ├── popup-main.js               # Popup controller
+│   └── popup.html                  # Popup interface
+└── shared/                         # Shared utilities
+    ├── utils/                      # Utility functions
+    │   ├── DOMUtils.js             # DOM manipulation utilities
+    │   ├── URLUtils.js             # URL parsing and validation
+    │   └── ValidationUtils.js      # Data validation utilities
+    ├── constants/                  # Application constants
+    │   └── PlatformConstants.js    # Platform-specific constants
+    └── message-types.js            # Legacy message types (compatibility)
 ```
 
 ## Supported Platforms
@@ -249,31 +302,74 @@ The extension follows a clean, modular architecture:
 
 ### Adding New Platforms
 
-To add support for a new social media platform:
+The refactored architecture makes adding new social media platforms straightforward through the platform registry system:
 
-1. Create a new platform class in `src/content/platforms/new-platform.js`
-2. Extend `BasePlatform` and implement required methods
-3. Add platform detection logic to `PlatformFactory`
-4. Update `constants.js` with platform-specific selectors
-5. Test the implementation on the target platform
+#### **Step-by-Step Guide**
 
-Example:
-```javascript
-// src/content/platforms/twitter-platform.js
-import { BasePlatform } from './base-platform.js';
+1. **Create Platform Extractor**
+   ```javascript
+   // src/platforms/twitter/TwitterExtractor.js
+   import { BasePlatformExtractor } from '../base/BasePlatformExtractor.js';
+   import { PLATFORMS } from '../../shared/constants/PlatformConstants.js';
 
-export class TwitterPlatform extends BasePlatform {
-  constructor() {
-    super();
-    this.platformName = 'twitter';
-  }
+   export class TwitterExtractor extends BasePlatformExtractor {
+     constructor(dependencies, config = {}) {
+       super(dependencies, config);
+     }
 
-  isCurrentPlatform() {
-    return window.location.hostname.includes('twitter.com');
-  }
+     get platformName() {
+       return PLATFORMS.TWITTER;
+     }
 
-  extractImages() {
-    // Implementation for Twitter image extraction
-  }
-}
-```
+     get supportedUrlPatterns() {
+       return ['twitter.com', 'x.com'];
+     }
+
+     async extractImages() {
+       this._startExtraction();
+
+       // Platform-specific extraction logic
+       const images = await this._extractTwitterImages();
+
+       return this._completeExtraction(images);
+     }
+
+     async _extractTwitterImages() {
+       // Implementation for Twitter image extraction
+       // Use this.logger, this.errorHandler, and this.config
+       // Return array of HTMLImageElement
+     }
+   }
+   ```
+
+2. **Register Platform**
+   ```javascript
+   // In ContentService or initialization code
+   this.platformRegistry.register(
+     PLATFORMS.TWITTER,
+     TwitterExtractor,
+     { name: 'Twitter/X', hostnames: ['twitter.com', 'x.com'] },
+     ['image_extraction', 'thread_extraction']
+   );
+   ```
+
+3. **Add Platform Constants**
+   ```javascript
+   // src/shared/constants/PlatformConstants.js
+   export const PLATFORMS = {
+     // ... existing platforms
+     TWITTER: 'twitter'
+   };
+   ```
+
+4. **Test Implementation**
+   - The platform will be automatically detected and used
+   - All core services (logging, error handling, messaging) are available
+   - No changes needed to popup, background, or other components
+
+#### **Platform Extractor Benefits**
+- **Automatic Integration**: Once registered, the platform works with all existing UI and download functionality
+- **Built-in Services**: Access to logging, error handling, configuration, and messaging services
+- **Common Utilities**: Image validation, DOM utilities, and extraction helpers provided by base class
+- **Consistent Interface**: All platforms follow the same interface contract
+- **Error Recovery**: Automatic error handling and user feedback through the error handler service

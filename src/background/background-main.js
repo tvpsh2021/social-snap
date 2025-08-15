@@ -1,50 +1,63 @@
 /**
  * Main background script for Social Media Image Downloader
+ * Uses the new BackgroundService architecture
  */
 
-import { DownloadManager } from './download-manager.js';
-import { CONTENT_MESSAGES, BACKGROUND_MESSAGES } from '../shared/message-types.js';
+import { createBackgroundService } from './BackgroundService.js';
 
-// Initialize download manager
-const downloadManager = new DownloadManager();
+// Global background service instance
+let backgroundService = null;
 
-// Listen for messages from content script
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === CONTENT_MESSAGES.IMAGES_EXTRACTED) {
-    downloadManager.storeImages(request.images);
-  } else if (request.action === CONTENT_MESSAGES.EXTRACTION_ERROR) {
-    console.error('Content script extraction error:', request.error);
+/**
+ * Initialize the background service
+ * @returns {Promise<void>}
+ */
+async function initializeBackgroundService() {
+  try {
+    if (backgroundService) {
+      return; // Already initialized
+    }
+
+    backgroundService = await createBackgroundService();
+    console.log('[Background] Service initialized successfully');
+
+  } catch (error) {
+    console.error('[Background] Failed to initialize service:', error);
+
+    // Retry initialization after a delay
+    setTimeout(() => {
+      initializeBackgroundService();
+    }, 5000);
   }
-});
+}
 
-// Handle download requests
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === BACKGROUND_MESSAGES.DOWNLOAD_IMAGES) {
-    downloadManager.downloadAllImages(request.images)
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        console.error('Download all images failed:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep message channel open for async response
-  } else if (request.action === BACKGROUND_MESSAGES.DOWNLOAD_SINGLE_IMAGE) {
-    downloadManager.downloadSingleImage(request.image, request.index)
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        console.error('Download single image failed:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true; // Keep message channel open for async response
+/**
+ * Cleanup background service
+ * @returns {Promise<void>}
+ */
+async function cleanupBackgroundService() {
+  if (backgroundService) {
+    await backgroundService.cleanup();
+    backgroundService = null;
   }
-});
+}
 
-// Function to get current image information
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'getCurrentImages') {
-    sendResponse({ images: downloadManager.getStoredImages() });
-  }
-});
+// Initialize service when script loads
+initializeBackgroundService();
+
+// Handle service worker lifecycle events
+if (typeof self !== 'undefined' && self.addEventListener) {
+  // Service worker context
+  self.addEventListener('install', (event) => {
+    console.log('[Background] Service worker installing');
+    event.waitUntil(initializeBackgroundService());
+  });
+
+  self.addEventListener('activate', (event) => {
+    console.log('[Background] Service worker activating');
+    event.waitUntil(initializeBackgroundService());
+  });
+}
+
+// Ensure service is available for other scripts
+globalThis.getBackgroundService = () => backgroundService;

@@ -4,11 +4,19 @@
   "description": "Social Snap - A Chrome extension that allows you to download all images from Threads.com and Instagram.com posts with a single click",
   "scripts": {
     "lint": "npm run lint:js && npm run lint:html",
-    "lint:js": "eslint *.js",
-    "lint:html": "htmlhint *.html",
+    "lint:js": "eslint src/**/*.js *.js",
+    "lint:html": "htmlhint src/**/*.html *.html",
     "lint:fix": "npm run lint:js:fix && npm run format:html",
-    "lint:js:fix": "eslint *.js --fix",
-    "format:html": "prettier --write *.html"
+    "lint:js:fix": "eslint src/**/*.js *.js --fix",
+    "format:html": "prettier --write src/**/*.html *.html",
+    "format:js": "prettier --write src/**/*.js *.js",
+    "format": "npm run format:js && npm run format:html",
+    "validate": "npm run lint && npm run format:check",
+    "format:check": "prettier --check src/**/*.js src/**/*.html *.js *.html",
+    "build:check": "node scripts/build-check.js",
+    "dev:watch": "nodemon --watch src --ext js,html --exec \"npm run lint:js\"",
+    "clean": "rm -rf dist/ && rm -rf node_modules/.cache/",
+    "prepare": "npm run lint && npm run format:check"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
@@ -17,7 +25,8 @@
     "eslint-plugin-n": "^16.6.2",
     "eslint-plugin-promise": "^6.1.1",
     "htmlhint": "^1.1.4",
-    "prettier": "^3.2.5"
+    "prettier": "^3.2.5",
+    "nodemon": "^3.0.3"
   },
   "keywords": [
     "chrome-extension",
@@ -26,12 +35,18 @@
     "batch-download",
     "threads",
     "instagram",
-    "social-snap"
+    "facebook",
+    "social-snap",
+    "manifest-v3"
   ],
   "author": "",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": ""
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
   }
 }

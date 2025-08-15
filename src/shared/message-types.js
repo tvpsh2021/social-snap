@@ -1,23 +1,24 @@
 /**
- * Message types for communication between different parts of the extension
+ * Legacy message types for backward compatibility
+ * These are maintained for compatibility with existing popup and content scripts
  */
 
 // Content script to popup/background messages
 export const CONTENT_MESSAGES = {
-  IMAGES_EXTRACTED: 'imagesExtracted',
-  EXTRACTION_ERROR: 'extractionError'
+  IMAGES_EXTRACTED: 'IMAGES_EXTRACTED',
+  EXTRACTION_ERROR: 'EXTRACTION_ERROR'
 };
 
 // Popup to content script messages
 export const POPUP_MESSAGES = {
-  EXTRACT_IMAGES: 'extractImages',
-  GET_CURRENT_IMAGES: 'getCurrentImages'
+  EXTRACT_IMAGES: 'EXTRACT_IMAGES',
+  GET_CURRENT_IMAGES: 'GET_IMAGES'
 };
 
 // Background script messages
 export const BACKGROUND_MESSAGES = {
-  DOWNLOAD_IMAGES: 'downloadImages',
-  DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage'
+  DOWNLOAD_IMAGES: 'DOWNLOAD_BATCH',
+  DOWNLOAD_SINGLE_IMAGE: 'DOWNLOAD_SINGLE'
 };
 
 // Message response structure
