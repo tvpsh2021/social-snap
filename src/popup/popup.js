@@ -202,6 +202,7 @@ class PopupController {
   constructor() {
     this.statusDisplay = new StatusDisplay();
     this.imageGrid = new ImageGrid();
+    this.currentTab = null;
 
     this._initializeEventListeners();
     this.init();
@@ -211,68 +212,38 @@ class PopupController {
     try {
       this.statusDisplay.showLoading();
 
-      const response = await chrome.runtime.sendMessage({ action: 'getCurrentImages' });
-
-      if (response && response.images && response.images.length > 0) {
-        this._displayImages(response.images);
-      } else {
-        await this._extractImagesFromCurrentTab();
-      }
-    } catch (err) {
-      console.error('Initialization failed:', err);
-      this.statusDisplay.showError();
-    }
-  }
-
-    async _extractImagesFromCurrentTab() {
-    try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      this.currentTab = tab;
 
-      const supportedPlatforms = Object.values(PLATFORM_HOSTNAMES);
-      const isSupported = supportedPlatforms.some(platform => tab.url.includes(platform));
+      // The content script now runs automatically on page load.
+      // The popup's only job is to query the background script for the result.
+      const response = await chrome.runtime.sendMessage({
+        action: POPUP_MESSAGES.GET_CURRENT_IMAGES,
+        tabId: this.currentTab.id
+      });
 
-      if (!isSupported) {
-        this.statusDisplay.showError(`Unsupported platform. This extension works on: ${supportedPlatforms.join(', ')}`);
-        return;
-      }
-
-      // Check if it's a homepage (should be excluded)
-      if (this._isHomepage(tab.url)) {
-        this.statusDisplay.showError('This extension only works on individual posts, not on the main feed page. Please navigate to a specific post.');
-        return;
-      }
-
-      const response = await chrome.tabs.sendMessage(tab.id, { action: POPUP_MESSAGES.EXTRACT_IMAGES });
-
-      if (response && response.success && response.images && response.images.length > 0) {
-        this._displayImages(response.images);
-      } else if (response && response.error) {
-        // Handle specific error messages
-        if (response.error.includes('Homepage detected') || response.error.includes('main feed')) {
-          this.statusDisplay.showError('This extension only works on individual posts. Please navigate to a specific post, not the main feed.');
-        } else if (response.error.includes('individual posts only')) {
-          this.statusDisplay.showError('This extension only works on individual posts. Please make sure you are viewing a single post.');
+      // If images are found (or an empty array from a failed/no-image extraction), display the result.
+      if (response && response.images) {
+        if (response.images.length > 0) {
+          this._displayImages(response.images);
         } else {
-          this.statusDisplay.showError(`Extraction failed: ${response.error}`);
+          // This handles cases where auto-extraction ran but found no images,
+          // or the page is unsupported.
+          this.statusDisplay.showError();
         }
       } else {
-        this.statusDisplay.showError();
+        // This handles errors or if the background script isn't ready.
+        console.error('Invalid response from background script.');
+        this.statusDisplay.showError('Failed to get images. Please reload the page and try again.');
       }
     } catch (err) {
-      console.error('Image extraction failed:', err);
-      this.statusDisplay.showError();
+      console.error('Popup initialization failed:', err);
+      if (err.message.includes('Receiving end does not exist')) {
+        this.statusDisplay.showError('This page may not be supported or needs to be reloaded.');
+      } else {
+        this.statusDisplay.showError('An unexpected error occurred.');
+      }
     }
-  }
-
-  _isHomepage(url) {
-    const homepagePatterns = [
-      /^https:\/\/www\.threads\.com\/?$/,
-      /^https:\/\/www\.threads\.com\/\?[^\/]*$/,
-      /^https:\/\/www\.instagram\.com\/?$/,
-      /^https:\/\/www\.instagram\.com\/\?[^\/]*$/
-    ];
-
-    return homepagePatterns.some(pattern => pattern.test(url));
   }
 
   _displayImages(images) {

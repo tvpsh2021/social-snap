@@ -159,30 +159,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Handle messages from popup or other extension parts
   switch (request.action) {
-    case POPUP_MESSAGES.GET_CURRENT_IMAGES:
-      if (request.tabId) {
-        const images = dataManager.getStoredImages(request.tabId);
-        sendResponse({ images });
-      }
-      break;
+  case POPUP_MESSAGES.GET_CURRENT_IMAGES:
+    if (request.tabId) {
+      const images = dataManager.getStoredImages(request.tabId);
+      sendResponse({ images });
+    }
+    break;
 
-    case BACKGROUND_MESSAGES.DOWNLOAD_IMAGES:
-      downloadManager.downloadAllImages(request.images)
-        .then(() => sendResponse({ success: true }))
-        .catch(error => {
-          console.error('Download all images failed:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-      return true; // Indicates async response
+  case BACKGROUND_MESSAGES.DOWNLOAD_IMAGES:
+    downloadManager.downloadAllImages(request.images)
+      .then(() => sendResponse({ success: true }))
+      .catch(error => {
+        console.error('Download all images failed:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Indicates async response
 
-    case BACKGROUND_MESSAGES.DOWNLOAD_SINGLE_IMAGE:
-      downloadManager.downloadSingleImage(request.image, request.index)
-        .then(() => sendResponse({ success: true }))
-        .catch(error => {
-          console.error('Download single image failed:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-      return true; // Indicates async response
+  case BACKGROUND_MESSAGES.DOWNLOAD_SINGLE_IMAGE:
+    downloadManager.downloadSingleImage(request.image, request.index)
+      .then(() => sendResponse({ success: true }))
+      .catch(error => {
+        console.error('Download single image failed:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Indicates async response
   }
 });
 

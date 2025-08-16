@@ -56,9 +56,6 @@ const IMAGE_FILTERS = {
 };
 
 const SELECTORS = {
-  ARTICLE: 'article',
-  IMAGES_WITH_ALT: 'img[alt*="可能是"], img[alt*="Photo by"]',
-
   THREADS: {
     PICTURE_IMAGES: 'picture img',
     DESCRIPTIVE_IMAGES: 'img[alt*="可能是"]',
@@ -75,13 +72,13 @@ const SELECTORS = {
   INSTAGRAM: {
     NEXT_BUTTONS: [
       'button[aria-label="Next"]',
-      'button[aria-label="下一個"]',
-      'button._afxw._al46._al47'
+      'button[aria-label="下一個"]'
     ],
     PREV_BUTTONS: [
       'button[aria-label="Previous"]',
       'button[aria-label="上一個"]'
-    ]
+    ],
+    IMAGES_WITH_ALT: 'img[alt*="可能是"], img[alt*="Photo by"], img[alt*="Photo shared"]',
   },
 
   FACEBOOK: {
@@ -500,286 +497,155 @@ class InstagramPlatform extends BasePlatform {
     return window.location.hostname.includes('instagram.com');
   }
 
-  async navigateCarousel() {
-    console.log('Starting carousel navigation to load all images...');
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const currentImgIndex = parseInt(urlParams.get('img_index') || '1');
-    console.log(`Starting from image index: ${currentImgIndex}`);
-
-    const allImages = new Map();
-    let navigationCount = 0;
-    const maxNavigations = NAVIGATION_LIMITS.MAX_ATTEMPTS;
-
-    const collectCurrentImages = () => {
-      console.log('Collecting current images...');
-      const descriptiveImages = document.querySelectorAll(SELECTORS.IMAGES_WITH_ALT);
-      console.log(`Found ${descriptiveImages.length} descriptive images`);
-
-      const validImages = Array.from(descriptiveImages).filter(img => {
-        const rect = img.getBoundingClientRect();
-        const isValid = rect.width > IMAGE_FILTERS.MIN_WIDTH &&
-                       rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
-                       !img.alt.toLowerCase().includes('profile picture') &&
-                       !img.src.includes('profile_pic');
-
-        if (isValid) {
-          console.log(`Valid image found: ${img.src.substring(0, 60)}...`);
-        }
-        return isValid;
-      });
-
-      let newImagesAdded = 0;
-      validImages.forEach(img => {
-        if (img.src && !allImages.has(img.src)) {
-          allImages.set(img.src, {
-            element: img,
-            src: img.src,
-            alt: img.alt,
-            srcset: img.srcset
-          });
-          newImagesAdded++;
-          console.log(`Added new image: ${img.alt.substring(0, 30)}...`);
-        }
-      });
-
-      console.log(`Collected ${validImages.length} valid images, new: ${newImagesAdded}, total unique: ${allImages.size}`);
-      return newImagesAdded;
-    };
-
-    await wait(NAVIGATION_LIMITS.INITIAL_WAIT);
-    collectCurrentImages();
-
-    if (currentImgIndex > 1) {
-      await this._navigateToBeginning(currentImgIndex, collectCurrentImages);
-    }
-
-    let consecutiveNoNewImages = 0;
-
-    while (navigationCount < maxNavigations) {
-      const nextButton = this._findNextButton();
-
-      if (!nextButton || nextButton.disabled) {
-        console.log('No more Next button or button is disabled, stopping navigation');
-        break;
-      }
-
-      console.log(`Navigation ${navigationCount + 1}: Clicking Next button`);
-      nextButton.click();
-
-      await wait(NAVIGATION_LIMITS.WAIT_TIME);
-
-      const newImageCount = collectCurrentImages();
-      navigationCount++;
-
-      if (newImageCount === 0) {
-        consecutiveNoNewImages++;
-        console.log(`No new images in attempt ${navigationCount}, consecutive failures: ${consecutiveNoNewImages}`);
-
-        if (consecutiveNoNewImages >= 3 && allImages.size > 0) {
-          console.log('Multiple consecutive attempts with no new images, stopping navigation');
-          break;
-        }
-      } else {
-        consecutiveNoNewImages = 0;
-      }
-
-      const updatedNextButton = this._findNextButton();
-      if (!updatedNextButton || updatedNextButton.disabled) {
-        console.log('Next button is now disabled or missing, stopping navigation');
-        break;
-      }
-    }
-
-    console.log(`Navigation completed. Total unique images found: ${allImages.size}`);
-    return Array.from(allImages.values()).map(item => item.element);
-  }
-
   async extractImages() {
     console.log('=== Starting Instagram image extraction ===');
+    await wait(2000); // Wait for lazy-loading
 
-    await wait(2000);
-
-    const article = document.querySelector(SELECTORS.ARTICLE);
-    if (article) {
-      article.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      await wait(1000);
+    const mainElement = document.querySelector('main');
+    if (!mainElement) {
+      console.log('No <main> element found. Cannot extract images.');
+      return [];
     }
 
-    console.log('Checking for carousel Next button...');
-
-    const allButtons = document.querySelectorAll('button');
-    console.log(`Total buttons found: ${allButtons.length}`);
-
-    const nextButton = this._findNextButton();
-    this._logNextButtonDetails(nextButton);
-
+    // Use the presence of a <ul> element to determine if it's a carousel
+    const isCarousel = !!mainElement.querySelector('ul li');
     let mainPostImages = [];
 
-    if (nextButton && !nextButton.disabled) {
-      console.log('Carousel detected, using navigation method to load all images...');
-      try {
-        mainPostImages = await this.navigateCarousel();
-        console.log(`Carousel navigation completed, found ${mainPostImages.length} images`);
-      } catch (error) {
-        console.error('Carousel navigation failed, falling back to static detection:', error);
-        mainPostImages = [];
-      }
+    if (isCarousel) {
+      console.log('Carousel post detected (<ul> found).');
+      mainPostImages = await this._navigateCarousel(mainElement);
+
+
     } else {
-      console.log('No active Next button found, using static detection only');
-    }
+      console.log('Single image post detected (no <ul> found).');
+      mainPostImages = this._extractSingleImage(mainElement);
 
-    if (mainPostImages.length === 0) {
-      mainPostImages = this._useStaticDetection();
-    }
+      console.log('filter before:', mainPostImages.length);
+      console.log(mainPostImages);
 
-    console.log(`Final selected Instagram post image count: ${mainPostImages.length}`);
+      // Apply boundary filter AFTER collecting all images
+      const boundaryElement = this._findBoundaryElement();
+      if (boundaryElement) {
+        console.log('Applying boundary filter.');
+        mainPostImages = mainPostImages.filter(img => {
+          if (!img || !img.isConnected) return false;
+          const position = boundaryElement.compareDocumentPosition(img);
+          return position & Node.DOCUMENT_POSITION_PRECEDING;
+        });
+      }
+
+      console.log(`Final selected Instagram post image count: ${mainPostImages.length}`);
+    }
 
     const imageData = [];
     mainPostImages.forEach((img, index) => {
-      imageData.push(this.createImageData(img, index));
+      if (img && img.src) {
+        imageData.push(this.createImageData(img, index));
+      }
     });
 
     console.log('Extracted Instagram image information:', imageData);
     return imageData;
   }
 
-  _findNextButton() {
-    for (const selector of SELECTORS.INSTAGRAM.NEXT_BUTTONS) {
-      const button = document.querySelector(selector);
-      if (button) {
-        console.log(`Found Next button with selector: ${selector}`);
-        return button;
+  _findBoundaryElement() {
+    const allDivs = document.querySelectorAll('div, h2, span');
+    for (const el of allDivs) {
+      if (el.textContent.trim().startsWith('More posts from')) {
+        console.log('Found boundary element:', el);
+        return el;
       }
     }
-
-    const possibleNextButtons = [
-      'button[tabindex="-1"]',
-      'button:has(div)',
-      'svg[aria-label="Next"] ~ button',
-      'button[class*="al4"]',
-      'article button:not([aria-label*="Like"]):not([aria-label*="Comment"]):not([aria-label*="Share"])'
-    ];
-
-    for (const selector of possibleNextButtons) {
-      const buttons = document.querySelectorAll(selector);
-      console.log(`Trying selector "${selector}": found ${buttons.length} buttons`);
-
-      for (const btn of buttons) {
-        const hasNextIcon = btn.innerHTML.includes('_9zm2') ||
-                           btn.querySelector('svg') ||
-                           btn.textContent.includes('Next') ||
-                           btn.ariaLabel?.includes('Next');
-
-        if (hasNextIcon && !btn.disabled) {
-          console.log('Found potential Next button:', btn);
-          return btn;
-        }
-      }
-    }
-
     return null;
   }
 
-  _logNextButtonDetails(nextButton) {
-    console.log('Next button found:', !!nextButton);
-    if (nextButton) {
-      console.log('Next button details:', {
-        tagName: nextButton.tagName,
-        className: nextButton.className,
-        ariaLabel: nextButton.ariaLabel,
-        disabled: nextButton.disabled
-      });
-    }
+  _extractSingleImage(container) {
+    console.log('Extracting single image...');
+    const postImages = container.querySelectorAll(SELECTORS.INSTAGRAM.IMAGES_WITH_ALT);
+    return Array.from(postImages).filter(img =>
+      img.naturalWidth > IMAGE_FILTERS.MIN_WIDTH && img.naturalHeight > IMAGE_FILTERS.MIN_HEIGHT
+    );
   }
 
-  async _navigateToBeginning(currentImgIndex, collectCurrentImages) {
-    console.log('Not at first image, trying to navigate to beginning...');
-    const prevButton = document.querySelector(SELECTORS.INSTAGRAM.PREV_BUTTONS[0]) ||
-                      document.querySelector(SELECTORS.INSTAGRAM.PREV_BUTTONS[1]);
+  async _navigateCarousel(container) {
+    console.log('Starting carousel navigation with user-defined rule-based logic and fixed wait...');
+    const imageMap = new Map();
+    let navigationCount = 0;
 
-    if (prevButton) {
-      for (let i = 0; i < currentImgIndex - 1; i++) {
-        console.log(`Navigating to previous image (${i + 1}/${currentImgIndex - 1})`);
-        prevButton.click();
-        await wait(1500);
-        collectCurrentImages();
+    const getTranslateXFromString = (element) => {
+      if (!element || !element.style || !element.style.transform) return null;
+      const transform = element.style.transform;
+      const match = transform.match(/translateX\(([^p]+)px\)/);
+      if (match && match[1]) {
+        return parseFloat(match[1]);
       }
-    }
-  }
+      return null;
+    };
 
-  _useStaticDetection() {
-    console.log('Using static detection methods...');
+    const collectCurrentlyVisibleImage = () => {
+      const ul =  container.querySelector('ul');
+      if (!ul) return;
 
-    const articleImages = document.querySelectorAll('article img');
-    console.log('Strategy 1 - Images in articles:', articleImages.length);
+      const listItems = Array.from(ul.children).filter(li => li instanceof HTMLLIElement);
 
-    const descriptiveImages = document.querySelectorAll(SELECTORS.IMAGES_WITH_ALT);
-    console.log('Strategy 2 - Images with descriptive alt text:', descriptiveImages.length);
+      console.log('This rounds li:', listItems.length);
 
-    const carouselImages = document.querySelectorAll('[role="tablist"] img, [role="button"] img');
-    console.log('Strategy 3 - Images in carousels:', carouselImages.length);
+      if (listItems.length === 0) return;
 
-    let mainPostImages = [];
+      const zeroPxLi = listItems.find(li => getTranslateXFromString(li) === 0);
 
-    const mainArticle = document.querySelector(SELECTORS.ARTICLE);
-    if (mainArticle) {
-      const postImages = mainArticle.querySelectorAll(SELECTORS.IMAGES_WITH_ALT);
-      const filteredImages = Array.from(postImages).filter(img => {
-        const rect = img.getBoundingClientRect();
-        return rect.width > 100 && rect.height > 100;
-      });
-
-      if (filteredImages.length > 0) {
-        console.log(`Found ${filteredImages.length} images in main article`);
-        mainPostImages = filteredImages;
-      }
-    }
-
-    if (mainPostImages.length === 0) {
-      console.log('No images found in article, trying carousel detection...');
-
-      const carouselContainer = document.querySelector('[role="tablist"]') ||
-                               document.querySelector('div[style*="transform"]') ||
-                               document.querySelector('div[class*="carousel"]');
-
-      if (carouselContainer) {
-        const carouselImgs = carouselContainer.querySelectorAll('img');
-        const contentImages = Array.from(carouselImgs).filter(img => {
-          const rect = img.getBoundingClientRect();
-          return rect.width > 200 && rect.height > 200 &&
-                 (img.alt.includes('可能是') || img.alt.includes('Photo by'));
-        });
-
-        if (contentImages.length > 0) {
-          console.log(`Found ${contentImages.length} images in carousel`);
-          mainPostImages = contentImages;
+      const insertImage = (_visibleLi) => {
+        const img = _visibleLi.querySelector(SELECTORS.INSTAGRAM.IMAGES_WITH_ALT);
+        if (img && img.src) {
+          if (!imageMap.has(img.src)) {
+            console.log(`Found new visible image via rules. Total: ${imageMap.size + 1}`);
+            imageMap.set(img.src, img);
+          }
         }
+      };
+
+      // first image
+      if (zeroPxLi && listItems.length === 3) {
+        console.log('Rule matched: Found li with translateX(0px). and li=3');
+        insertImage(listItems[1]);
+      }
+
+      insertImage(listItems[2]);
+    };
+
+    while (navigationCount < NAVIGATION_LIMITS.MAX_ATTEMPTS) {
+      console.log('navigationCount: ', navigationCount);
+      collectCurrentlyVisibleImage();
+
+      const nextButton = this._findNextButton(container);
+      if (!nextButton) {
+        console.log('Navigation finished: No "Next" button found.');
+        break;
+      }
+
+      console.log(`Navigation attempt ${navigationCount + 1}: Clicking Next button.`);
+      nextButton.click();
+      navigationCount++;
+      console.log('button clicked');
+
+      await wait(1000); // Reverted to fixed wait time as requested.
+    }
+
+    console.log(`Carousel navigation complete. Found ${imageMap.size} unique images.`);
+
+    return Array.from(imageMap.values());
+  }
+
+  _findNextButton(container) {
+    const selectors = SELECTORS.INSTAGRAM.NEXT_BUTTONS;
+
+    for (const selector of selectors) {
+      const button = container.querySelector(selector);
+      if (button && button.offsetParent !== null) {
+        return button;
       }
     }
-
-    if (mainPostImages.length === 0) {
-      console.log('Using fallback method - looking for any large descriptive images...');
-
-      const allDescriptiveImages = Array.from(descriptiveImages).filter(img => {
-        const rect = img.getBoundingClientRect();
-        return rect.width > IMAGE_FILTERS.MIN_WIDTH &&
-               rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
-               !img.alt.toLowerCase().includes('profile picture') &&
-               !img.src.includes('profile_pic');
-      });
-
-      allDescriptiveImages.sort((a, b) => {
-        const aRect = a.getBoundingClientRect();
-        const bRect = b.getBoundingClientRect();
-        return (bRect.width * bRect.height) - (aRect.width * aRect.height);
-      });
-
-      mainPostImages = allDescriptiveImages.slice(0, 10);
-      console.log(`Found ${mainPostImages.length} images using fallback method`);
-    }
-
-    return mainPostImages;
+    return null;
   }
 }
 
@@ -1189,7 +1055,7 @@ async function extractImages() {
     if (isHomepage(currentUrl)) {
       error = 'Homepage detected. This extension only works on individual posts, not on the main feed.';
     } else if (!isSinglePost(currentUrl)) {
-      error = `Unsupported page type. This extension works on individual posts only.`;
+      error = 'Unsupported page type. This extension works on individual posts only.';
     } else {
       error = `Unsupported platform: ${window.location.hostname}`;
     }
