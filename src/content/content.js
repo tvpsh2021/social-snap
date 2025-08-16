@@ -111,7 +111,9 @@ const SELECTORS = {
       'img[alt*="人"]',
       'img[alt*="画像のようです"]',
       'img[src*="fbcdn.net"]',
-      'img[src*="facebook.com"]'
+      'img[src*="facebook.com"]',
+      '[data-pagelet="MediaViewer"] img',
+      '[data-testid*="photo"] img'
     ]
   }
 };
@@ -672,15 +674,7 @@ class FacebookPlatform extends BasePlatform {
       console.log('Taking Facebook image snapshot...');
 
       // Try multiple selectors to find the main image
-      const possibleSelectors = [
-        'main img',
-        'img[alt*="人"]',
-        'img[alt*="画像のようです"]',
-        'div[role="main"] img',
-        '[data-pagelet="MediaViewer"] img',
-        '[data-testid*="photo"] img',
-        'img[src*="fbcdn.net"]'
-      ];
+      const possibleSelectors = SELECTORS.FACEBOOK.POST_IMAGES;
 
       let foundImage = null;
 
@@ -811,7 +805,7 @@ class FacebookPlatform extends BasePlatform {
       }
 
       // Wait even longer for Facebook's lazy loading
-      await wait(4000);
+      await wait(2000);
 
       // Try to collect new image
       const foundNewImage = takeImageSnapshot();
@@ -929,7 +923,7 @@ class FacebookPlatform extends BasePlatform {
   async extractImages() {
     console.log('=== Starting Facebook image extraction ===');
 
-    await wait(2000);
+    await wait(1000);
 
     const isPhotoPage = window.location.pathname.includes('/photo') ||
                        window.location.search.includes('fbid=');
