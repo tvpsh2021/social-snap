@@ -35,26 +35,40 @@ const CONTENT_MESSAGES = {
   EXTRACTION_ERROR: 'extractionError'
 };
 
+const POPUP_MESSAGES = {
+  GET_CURRENT_IMAGES: 'getCurrentImages'
+};
+
 const BACKGROUND_MESSAGES = {
   DOWNLOAD_IMAGES: 'downloadImages',
   DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage'
 };
 
+// === DATA MANAGER ===
+class DataManager {
+  constructor() {
+    this.tabImages = {}; // Use an object to store images per tabId
+  }
+
+  storeImages(tabId, images) {
+    this.tabImages[tabId] = images;
+    console.log(`Stored ${images.length} images for tab ${tabId}`);
+  }
+
+  getStoredImages(tabId) {
+    return this.tabImages[tabId] || [];
+  }
+
+  clearTabData(tabId) {
+    if (this.tabImages[tabId]) {
+      delete this.tabImages[tabId];
+      console.log(`Cleared image data for closed tab ${tabId}`);
+    }
+  }
+}
+
 // === DOWNLOAD MANAGER ===
 class DownloadManager {
-  constructor() {
-    this.currentImages = [];
-  }
-
-  storeImages(images) {
-    this.currentImages = images;
-    console.log(`Background script received ${images.length} image information`);
-  }
-
-  getStoredImages() {
-    return this.currentImages;
-  }
-
   async downloadAllImages(images) {
     // Detect platform from current tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -125,44 +139,55 @@ class DownloadManager {
   }
 }
 
-// === INITIALIZE DOWNLOAD MANAGER ===
+// === INITIALIZE MANAGERS ===
+const dataManager = new DataManager();
 const downloadManager = new DownloadManager();
 
 // === MESSAGE LISTENERS ===
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === CONTENT_MESSAGES.IMAGES_EXTRACTED) {
-    downloadManager.storeImages(request.images);
-  } else if (request.action === CONTENT_MESSAGES.EXTRACTION_ERROR) {
-    console.error('Content script extraction error:', request.error);
+  // Handle messages from content scripts
+  if (sender.tab) {
+    if (request.action === CONTENT_MESSAGES.IMAGES_EXTRACTED) {
+      dataManager.storeImages(sender.tab.id, request.images);
+      return; // No response needed
+    } else if (request.action === CONTENT_MESSAGES.EXTRACTION_ERROR) {
+      console.error(`Content script error in tab ${sender.tab.id}:`, request.error);
+      dataManager.storeImages(sender.tab.id, []); // Clear images on error
+      return; // No response needed
+    }
+  }
+
+  // Handle messages from popup or other extension parts
+  switch (request.action) {
+    case POPUP_MESSAGES.GET_CURRENT_IMAGES:
+      if (request.tabId) {
+        const images = dataManager.getStoredImages(request.tabId);
+        sendResponse({ images });
+      }
+      break;
+
+    case BACKGROUND_MESSAGES.DOWNLOAD_IMAGES:
+      downloadManager.downloadAllImages(request.images)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => {
+          console.error('Download all images failed:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Indicates async response
+
+    case BACKGROUND_MESSAGES.DOWNLOAD_SINGLE_IMAGE:
+      downloadManager.downloadSingleImage(request.image, request.index)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => {
+          console.error('Download single image failed:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Indicates async response
   }
 });
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === BACKGROUND_MESSAGES.DOWNLOAD_IMAGES) {
-    downloadManager.downloadAllImages(request.images)
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        console.error('Download all images failed:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true;
-  } else if (request.action === BACKGROUND_MESSAGES.DOWNLOAD_SINGLE_IMAGE) {
-    downloadManager.downloadSingleImage(request.image, request.index)
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch(error => {
-        console.error('Download single image failed:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true;
-  }
-});
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'getCurrentImages') {
-    sendResponse({ images: downloadManager.getStoredImages() });
-  }
+// === TAB MANAGEMENT ===
+// Clean up data when a tab is closed to prevent memory leaks
+chrome.tabs.onRemoved.addListener((tabId) => {
+  dataManager.clearTabData(tabId);
 });
