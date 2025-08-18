@@ -38,6 +38,7 @@
         "https://www.threads.com/@*/post/*",
         "https://www.threads.com/t/*",
         "https://www.instagram.com/p/*",
+        "https://www.instagram.com/*/p/*",
         "https://www.instagram.com/reel/*",
         "https://www.facebook.com/photo/*",
         "https://www.facebook.com/*/photos/*"

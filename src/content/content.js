@@ -19,33 +19,41 @@ const PLATFORM_HOSTNAMES = {
 // URL patterns for single posts (exclude homepage/main feeds)
 const SINGLE_POST_PATTERNS = {
   [PLATFORMS.THREADS]: [
-    /^https:\/\/www\.threads\.com\/@[^\/]+\/post\/[^\/]+/,  // @username/post/postId
-    /^https:\/\/www\.threads\.com\/t\/[^\/]+/               // /t/postId format
+    /^https:\/\/www\.threads\.com\/@[^/]+\/post\/[^/]+/,   // @username/post/postId
+    /^https:\/\/www\.threads\.com\/t\/[^/]+/               // /t/postId format
   ],
   [PLATFORMS.INSTAGRAM]: [
-    /^https:\/\/www\.instagram\.com\/p\/[^\/]+/,            // /p/postId
-    /^https:\/\/www\.instagram\.com\/reel\/[^\/]+/          // /reel/reelId
+    /^https:\/\/www\.instagram\.com\/p\/[^/]+/,            // /p/postId
+    /^https:\/\/www\.instagram\.com\/[^/]+\/p\/[^/]+/,     // /accountId/p/postId
+    /^https:\/\/www\.instagram\.com\/reel\/[^/]+/          // /reel/reelId
   ],
   [PLATFORMS.FACEBOOK]: [
     /^https:\/\/www\.facebook\.com\/photo\/\?fbid=/,        // /photo/?fbid=photoId
-    /^https:\/\/www\.facebook\.com\/[^\/]+\/photos\//       // /username/photos/photoId
+    /^https:\/\/www\.facebook\.com\/[^/]+\/photos\//        // /username/photos/photoId
   ]
 };
 
 // Homepage patterns to exclude
 const HOMEPAGE_PATTERNS = [
   /^https:\/\/www\.threads\.com\/?$/,                       // Threads homepage
-  /^https:\/\/www\.threads\.com\/\?[^\/]*$/,               // Threads homepage with query params
+  /^https:\/\/www\.threads\.com\/\?[^/]*$/,               // Threads homepage with query params
   /^https:\/\/www\.instagram\.com\/?$/,                     // Instagram homepage
-  /^https:\/\/www\.instagram\.com\/\?[^\/]*$/,             // Instagram homepage with query params
+  /^https:\/\/www\.instagram\.com\/\?[^/]*$/,             // Instagram homepage with query params
   /^https:\/\/www\.facebook\.com\/?$/,                      // Facebook homepage
-  /^https:\/\/www\.facebook\.com\/\?[^\/]*$/               // Facebook homepage with query params
+  /^https:\/\/www\.facebook\.com\/\?[^/]*$/               // Facebook homepage with query params
 ];
 
-const NAVIGATION_LIMITS = {
-  MAX_ATTEMPTS: 20,
-  WAIT_TIME: 2000,
-  INITIAL_WAIT: 1000
+const CAROUSEL = {
+  INSTAGRAM: {
+    INITIAL_WAIT: 2000,
+    WAIT_TIME: 1000,
+    MAX_ATTEMPTS: 50,
+  },
+  FACEBOOK: {
+    INITIAL_WAIT: 2000,
+    WAIT_TIME: 1000,
+    MAX_ATTEMPTS: 50,
+  }
 };
 
 const IMAGE_FILTERS = {
@@ -181,34 +189,6 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function waitForElement(selector, timeout = 5000) {
-  return new Promise((resolve) => {
-    const element = document.querySelector(selector);
-    if (element) {
-      resolve(element);
-      return;
-    }
-
-    const observer = new MutationObserver((mutations) => {
-      const element = document.querySelector(selector);
-      if (element) {
-        observer.disconnect();
-        resolve(element);
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-
-    setTimeout(() => {
-      observer.disconnect();
-      resolve(null);
-    }, timeout);
-  });
-}
-
 // === MESSAGE TYPES ===
 const CONTENT_MESSAGES = {
   IMAGES_EXTRACTED: 'imagesExtracted',
@@ -331,7 +311,7 @@ class ThreadsPlatform extends BasePlatform {
   }
 
   isCurrentPlatform() {
-    return window.location.hostname.includes('threads.com');
+    return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.THREADS]);
   }
 
   extractImages() {
@@ -501,7 +481,7 @@ class InstagramPlatform extends BasePlatform {
 
   async extractImages() {
     console.log('=== Starting Instagram image extraction ===');
-    await wait(2000); // Wait for lazy-loading
+    await wait(CAROUSEL.INSTAGRAM.INITIAL_WAIT);
 
     const mainElement = document.querySelector('main');
     if (!mainElement) {
@@ -590,8 +570,6 @@ class InstagramPlatform extends BasePlatform {
 
       const listItems = Array.from(ul.children).filter(li => li instanceof HTMLLIElement);
 
-      console.log('This rounds li:', listItems.length);
-
       if (listItems.length === 0) return;
 
       const zeroPxLi = listItems.find(li => getTranslateXFromString(li) === 0);
@@ -615,7 +593,7 @@ class InstagramPlatform extends BasePlatform {
       insertImage(listItems[2]);
     };
 
-    while (navigationCount < NAVIGATION_LIMITS.MAX_ATTEMPTS) {
+    while (navigationCount < CAROUSEL.INSTAGRAM.MAX_ATTEMPTS) {
       console.log('navigationCount: ', navigationCount);
       collectCurrentlyVisibleImage();
 
@@ -628,9 +606,8 @@ class InstagramPlatform extends BasePlatform {
       console.log(`Navigation attempt ${navigationCount + 1}: Clicking Next button.`);
       nextButton.click();
       navigationCount++;
-      console.log('button clicked');
 
-      await wait(1000); // Reverted to fixed wait time as requested.
+      await wait(CAROUSEL.INSTAGRAM.WAIT_TIME);
     }
 
     console.log(`Carousel navigation complete. Found ${imageMap.size} unique images.`);
@@ -659,7 +636,7 @@ class FacebookPlatform extends BasePlatform {
   }
 
   isCurrentPlatform() {
-    return window.location.hostname.includes('facebook.com');
+    return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK]);
   }
 
   async navigateCarousel() {
@@ -667,7 +644,7 @@ class FacebookPlatform extends BasePlatform {
 
     const collectedImages = [];
     let navigationCount = 0;
-    const maxNavigations = 500; // Support very large albums (prevent infinite loops)
+    const maxNavigations = CAROUSEL.FACEBOOK.MAX_ATTEMPTS;
 
     // Enhanced image detection function
     const takeImageSnapshot = () => {
@@ -777,7 +754,7 @@ class FacebookPlatform extends BasePlatform {
 
     // Collect the first image
     console.log('Collecting initial Facebook image...');
-    await wait(NAVIGATION_LIMITS.INITIAL_WAIT);
+
     takeImageSnapshot();
 
     // Navigate through the album until we find a duplicate image (full circle)
@@ -804,8 +781,7 @@ class FacebookPlatform extends BasePlatform {
         }
       }
 
-      // Wait even longer for Facebook's lazy loading
-      await wait(2000);
+      await wait(CAROUSEL.FACEBOOK.WAIT_TIME);
 
       // Try to collect new image
       const foundNewImage = takeImageSnapshot();
@@ -814,7 +790,7 @@ class FacebookPlatform extends BasePlatform {
         console.log(`Successfully navigated to image ${collectedImages.length}`);
       } else {
         console.log('Found duplicate image, album navigation complete');
-        break; // Immediately stop when we find a duplicate (completed full circle)
+        break;
       }
 
       navigationCount++;
@@ -841,7 +817,6 @@ class FacebookPlatform extends BasePlatform {
 
     for (const selector of SELECTORS.FACEBOOK.NAVIGATION_BUTTONS) {
       try {
-        // Handle :contains() selector manually since CSS doesn't support it
         if (selector.includes(':contains(')) {
           const text = selector.match(/:contains\("([^"]+)"\)/)?.[1];
           if (text) {
@@ -923,7 +898,7 @@ class FacebookPlatform extends BasePlatform {
   async extractImages() {
     console.log('=== Starting Facebook image extraction ===');
 
-    await wait(1000);
+    await wait(CAROUSEL.FACEBOOK.INITIAL_WAIT);
 
     const isPhotoPage = window.location.pathname.includes('/photo') ||
                        window.location.search.includes('fbid=');

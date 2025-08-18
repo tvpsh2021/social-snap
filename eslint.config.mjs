@@ -7,7 +7,12 @@ export default defineConfig([
     files: ['**/*.{js,mjs,cjs}'],
     plugins: { js },
     extends: ['js/recommended'],
-    languageOptions: { globals: globals.browser },
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.webextensions
+      }
+    },
     rules: {
       indent: ['error', 2],
       quotes: ['error', 'single'],
