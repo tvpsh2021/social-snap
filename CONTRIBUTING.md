@@ -169,6 +169,116 @@ refactor(background): improve download error handling
 - Update installation instructions if needed
 - Maintain clear and accurate technical documentation
 
+## 🔧 Adding New Platform Support
+
+When adding support for a new social media platform, follow this checklist to ensure all components are properly updated:
+
+### ⚠️ **CRITICAL: Common Issue - Filename Prefix**
+
+**The most commonly forgotten step when adding new platform support is updating the download manager filename generation in `background.js`. This results in downloaded files being named `unknown_xxxxx.jpg` instead of `platformname_xxxxx.jpg`.**
+
+### New Platform Development Checklist
+
+**1. Content Script (src/content/content.js):**
+- [ ] Add platform to `PLATFORMS` constant
+- [ ] Add hostname to `PLATFORM_HOSTNAMES` constant
+- [ ] Add URL patterns to `SINGLE_POST_PATTERNS`
+- [ ] Add homepage patterns to `HOMEPAGE_PATTERNS` (if needed)
+- [ ] Add selectors to `SELECTORS` constant
+- [ ] Create new Platform class (e.g., `TwitterPlatform extends BasePlatform`)
+- [ ] Update `getPlatformFromUrl()` function
+- [ ] Update `PlatformFactory.createPlatform()` method
+
+**2. Background Script (src/background/background.js) - ⚠️ DON'T FORGET:**
+- [ ] **Update `downloadAllImages()` method** - Add platform detection for filename generation
+- [ ] **Update `downloadSingleImage()` method** - Add platform detection for filename generation
+
+**3. Manifest (manifest.json):**
+- [ ] Add host permissions for the new platform
+- [ ] Add content script matches for the new platform URLs
+- [ ] Update description to include the new platform
+
+**4. Documentation:**
+- [ ] Update README.md with new platform information
+- [ ] Update supported URL patterns
+- [ ] Update usage examples
+- [ ] Update troubleshooting section
+
+### Example: Adding X.com Support
+
+**Step 1: Content Script Updates**
+```javascript
+// Add to PLATFORMS constant
+const PLATFORMS = {
+  THREADS: 'threads',
+  INSTAGRAM: 'instagram',
+  FACEBOOK: 'facebook',
+  X: 'x'  // ← Add this
+};
+
+// Update getPlatformFromUrl()
+function getPlatformFromUrl(url) {
+  // ... existing code ...
+  } else if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.X])) {
+    return PLATFORMS.X;  // ← Add this
+  }
+  return null;
+}
+```
+
+**Step 2: Background Script Updates** ⚠️ **CRITICAL STEP**
+```javascript
+// In downloadAllImages() method:
+if (tab.url.includes('threads.com')) {
+  platformName = 'threads';
+} else if (tab.url.includes('instagram.com')) {
+  platformName = 'instagram';
+} else if (tab.url.includes('facebook.com')) {
+  platformName = 'facebook';
+} else if (tab.url.includes('x.com')) {  // ← Add this
+  platformName = 'x';
+}
+
+// ALSO update downloadSingleImage() method with the same logic!
+```
+
+**Step 3: Manifest Updates**
+```json
+{
+  "host_permissions": [
+    "https://x.com/*",  // ← Add this
+    "https://*.twimg.com/*"  // ← Add CDN if needed
+  ],
+  "content_scripts": [{
+    "matches": [
+      "https://x.com/*/status/*/photo/*"  // ← Add this
+    ]
+  }]
+}
+```
+
+### Testing New Platform Support
+
+1. **Filename Test**: Download an image and verify filename starts with correct platform name
+2. **Functionality Test**: Test image detection and extraction
+3. **Boundary Test**: Test any boundary filtering logic
+4. **Multi-image Test**: Test carousel/gallery navigation if applicable
+
+### Debugging Tools
+
+When developing new platform support, use these debugging functions:
+
+```javascript
+// For general platform testing
+testXExtraction()
+
+// For boundary filtering testing
+testXBoundary()
+
+// Check platform detection
+console.log('Platform detected:', getPlatformFromUrl(window.location.href));
+```
+
 ## 🚀 Getting Started
 
 1. **Fork and Clone:**

@@ -7,13 +7,15 @@
 const PLATFORMS = {
   THREADS: 'threads',
   INSTAGRAM: 'instagram',
-  FACEBOOK: 'facebook'
+  FACEBOOK: 'facebook',
+  X: 'x'
 };
 
 const PLATFORM_HOSTNAMES = {
   [PLATFORMS.THREADS]: 'threads.com',
   [PLATFORMS.INSTAGRAM]: 'instagram.com',
-  [PLATFORMS.FACEBOOK]: 'facebook.com'
+  [PLATFORMS.FACEBOOK]: 'facebook.com',
+  [PLATFORMS.X]: 'x.com'
 };
 
 // URL patterns for single posts (exclude homepage/main feeds)
@@ -30,6 +32,9 @@ const SINGLE_POST_PATTERNS = {
   [PLATFORMS.FACEBOOK]: [
     /^https:\/\/www\.facebook\.com\/photo\/\?fbid=/,        // /photo/?fbid=photoId
     /^https:\/\/www\.facebook\.com\/[^/]+\/photos\//        // /username/photos/photoId
+  ],
+  [PLATFORMS.X]: [
+    /^https:\/\/x\.com\/[^/]+\/status\/[^/]+\/photo\/\d+/   // /username/status/statusId/photo/number - Only photo mode
   ]
 };
 
@@ -40,19 +45,27 @@ const HOMEPAGE_PATTERNS = [
   /^https:\/\/www\.instagram\.com\/?$/,                     // Instagram homepage
   /^https:\/\/www\.instagram\.com\/\?[^/]*$/,             // Instagram homepage with query params
   /^https:\/\/www\.facebook\.com\/?$/,                      // Facebook homepage
-  /^https:\/\/www\.facebook\.com\/\?[^/]*$/               // Facebook homepage with query params
+  /^https:\/\/www\.facebook\.com\/\?[^/]*$/,              // Facebook homepage with query params
+  /^https:\/\/x\.com\/?$/,                                  // X homepage
+  /^https:\/\/x\.com\/home$/,                              // X home feed
+  /^https:\/\/x\.com\/\?[^/]*$/                           // X homepage with query params
 ];
 
 const CAROUSEL = {
   INSTAGRAM: {
-    INITIAL_WAIT: 2000,
+    INITIAL_WAIT: 500,
     WAIT_TIME: 1000,
     MAX_ATTEMPTS: 50,
   },
   FACEBOOK: {
-    INITIAL_WAIT: 2000,
+    INITIAL_WAIT: 1000,
     WAIT_TIME: 1000,
     MAX_ATTEMPTS: 50,
+  },
+  X: {
+    INITIAL_WAIT: 500,
+    WAIT_TIME: 1000,
+    MAX_ATTEMPTS: 10,
   }
 };
 
@@ -86,7 +99,7 @@ const SELECTORS = {
       'button[aria-label="Previous"]',
       'button[aria-label="上一個"]'
     ],
-    IMAGES_WITH_ALT: 'img[alt*="可能是"], img[alt*="Photo by"], img[alt*="Photo shared"]',
+    IMAGES_WITH_ALT: 'img',
   },
 
   FACEBOOK: {
@@ -123,6 +136,47 @@ const SELECTORS = {
       '[data-pagelet="MediaViewer"] img',
       '[data-testid*="photo"] img'
     ]
+  },
+
+  X: {
+    CAROUSEL_CONTAINER: [
+      // 'dialog ul',
+      // 'dialog div[role="group"] ul',
+      // 'div[data-testid*="carousel"] ul'
+      'ul[role="list"]'
+    ],
+    CAROUSEL_IMAGES: [
+      // 'dialog ul li img',
+      // 'dialog div[role="group"] ul li img',
+      // 'div[data-testid*="carousel"] ul li img'
+      'li[role="listitem"] img'
+    ],
+    NEXT_BUTTONS: [
+      'button[aria-label="Next slide"]',
+      'button[aria-label="Next slide"][role="button"]',
+      'button:has(svg):has(path[d*="12.957 4.54L20.414 12"])',
+      'button:has([aria-label="Next slide"])',
+      'button[aria-label*="Next"]',
+      'button[aria-label*="次の"]'
+    ],
+    PREV_BUTTONS: [
+      'button[aria-label="Previous slide"]',
+      'button:has([aria-label="Previous slide"])',
+      'button[aria-label*="Previous"]',
+      'button[aria-label*="前の"]'
+    ],
+    POST_IMAGES: [
+      'dialog img[alt="Image"]',
+      'dialog img[alt="画像"]',
+      'dialog img[src*="twimg.com"]',
+      'article img[alt="Image"]',
+      'img[src*="pbs.twimg.com"]'
+    ],
+    MAIN_DIALOG: [
+      'dialog[role="dialog"]',
+      'div[data-testid="photoModal"]',
+      'div[role="dialog"]'
+    ]
   }
 };
 
@@ -148,6 +202,8 @@ function getPlatformFromUrl(url) {
     return PLATFORMS.INSTAGRAM;
   } else if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK])) {
     return PLATFORMS.FACEBOOK;
+  } else if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.X])) {
+    return PLATFORMS.X;
   }
   return null;
 }
@@ -173,7 +229,7 @@ function getFileExtension(url) {
     if (url.includes('gif')) return 'gif';
 
     return 'jpg';
-  } catch (error) {
+  } catch {
     console.log('Unable to parse URL, using default extension jpg');
     return 'jpg';
   }
@@ -205,9 +261,9 @@ const createSuccessResponse = (data) => ({
   ...data
 });
 
-const createErrorResponse = (error, message = 'Operation failed') => ({
+const createErrorResponse = (errorObj, message = 'Operation failed') => ({
   success: false,
-  error: error.message || error,
+  error: errorObj.message || errorObj,
   message
 });
 
@@ -569,6 +625,7 @@ class InstagramPlatform extends BasePlatform {
       if (!ul) return;
 
       const listItems = Array.from(ul.children).filter(li => li instanceof HTMLLIElement);
+      console.log('listItems: ', listItems);
 
       if (listItems.length === 0) return;
 
@@ -772,7 +829,7 @@ class FacebookPlatform extends BasePlatform {
       try {
         // Strategy 1: Direct click
         nextButton.click();
-      } catch (error) {
+      } catch {
         console.log('Direct click failed, trying parent button');
         // Strategy 2: Click parent button
         const parentButton = nextButton.closest('button');
@@ -973,6 +1030,293 @@ class FacebookPlatform extends BasePlatform {
   }
 }
 
+// === X PLATFORM ===
+class XPlatform extends BasePlatform {
+  constructor() {
+    super();
+    this.platformName = PLATFORMS.X;
+  }
+
+  isCurrentPlatform() {
+    return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.X]);
+  }
+
+  async extractImages() {
+    console.log('=== Starting X.com image extraction ===');
+    await wait(CAROUSEL.X.INITIAL_WAIT);
+
+    // Check if we're in photo mode (URL contains /photo/)
+    const isPhotoMode = window.location.pathname.includes('/photo/');
+    console.log('Photo mode detected:', isPhotoMode);
+
+    // Find the main dialog container
+    let mainDialog = null;
+    for (const selector of SELECTORS.X.MAIN_DIALOG) {
+      mainDialog = document.querySelector(selector);
+      if (mainDialog) {
+        console.log(`Found main dialog with selector: ${selector}`);
+        break;
+      }
+    }
+
+    if (!mainDialog) {
+      console.log('No main dialog found. Cannot extract images.');
+      return [];
+    }
+
+    // Check if it's a carousel (has multiple images)
+    let carouselContainer = null;
+    for (const selector of SELECTORS.X.CAROUSEL_CONTAINER) {
+      carouselContainer = mainDialog.querySelector(selector);
+      if (carouselContainer) {
+        console.log(`Found carousel container with selector: ${selector}`);
+        break;
+      }
+    }
+
+    const isCarousel = !!carouselContainer;
+    console.log('Carousel detected:', isCarousel);
+
+    let mainPostImages = [];
+
+    if (isCarousel) {
+      console.log('Extracting images from carousel...');
+      mainPostImages = await this._navigateCarousel(mainDialog);
+    } else {
+      console.log('Extracting single image...');
+      mainPostImages = this._extractSingleImage(mainDialog);
+    }
+
+    console.log(`Final selected X.com post image count: ${mainPostImages.length}`);
+
+    // Apply boundary filter to exclude images after the boundary element
+    const boundaryElement = this._findBoundaryElement();
+    if (boundaryElement && mainPostImages.length > 0) {
+      console.log('Found boundary element, applying boundary filter...');
+      const beforeFilterCount = mainPostImages.length;
+
+      mainPostImages = mainPostImages.filter(img => {
+        if (!img || !img.isConnected) return false;
+        const position = boundaryElement.compareDocumentPosition(img);
+        const isBeforeBoundary = position & Node.DOCUMENT_POSITION_PRECEDING;
+
+        if (!isBeforeBoundary) {
+          console.log('Filtered out image after boundary:', img.src.substring(0, 50) + '...');
+        }
+
+        return isBeforeBoundary;
+      });
+
+      console.log(`Boundary filter applied: ${beforeFilterCount} -> ${mainPostImages.length} images`);
+    } else {
+      console.log('No boundary element found or no images to filter');
+    }
+
+    const imageData = [];
+    mainPostImages.forEach((img, index) => {
+      if (img && img.src) {
+        imageData.push(this.createImageData(img, index));
+      }
+    });
+
+    console.log('Extracted X.com image information:', imageData);
+    return imageData;
+  }
+
+  _extractSingleImage(container) {
+    console.log('Extracting single image from X.com...');
+
+    // Try different selectors to find the main image
+    for (const selector of SELECTORS.X.POST_IMAGES) {
+      const images = container.querySelectorAll(selector);
+      console.log(`Trying selector "${selector}": found ${images.length} images`);
+
+      const validImages = Array.from(images).filter(img => {
+        const rect = img.getBoundingClientRect();
+        const hasValidSize = rect.width > IMAGE_FILTERS.MIN_WIDTH && rect.height > IMAGE_FILTERS.MIN_HEIGHT;
+        const isContentImage = img.alt === 'Image' || img.alt === '画像' || img.src.includes('twimg.com');
+
+        console.log('Image validation:', {
+          src: img.src.substring(0, 50) + '...',
+          alt: img.alt,
+          size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+          hasValidSize,
+          isContentImage
+        });
+
+        return hasValidSize && isContentImage;
+      });
+
+      if (validImages.length > 0) {
+        console.log(`Found ${validImages.length} valid images with selector: ${selector}`);
+        return validImages;
+      }
+    }
+
+    console.log('No valid images found');
+    return [];
+  }
+
+  async _navigateCarousel(container) {
+    console.log('Starting X.com carousel navigation...');
+    console.log('X.com carousel works with lazy loading: initially loads 2 <li>, then loads new ones on navigation');
+
+    const imageMap = new Map();
+    let navigationCount = 0;
+
+    const collectCurrentlyVisibleImages = () => {
+      console.log(`\n--- Collecting images (attempt ${navigationCount + 1}) ---`);
+      let foundImages = false;
+      let newImagesFound = 0;
+
+      for (const selector of SELECTORS.X.CAROUSEL_IMAGES) {
+        const carouselImages = container.querySelectorAll(selector);
+        console.log(`Trying carousel selector "${selector}": found ${carouselImages.length} images`);
+
+        if (carouselImages.length > 0) {
+          foundImages = true;
+          carouselImages.forEach((img, index) => {
+            if (img && img.src) {
+              const rect = img.getBoundingClientRect();
+              const isValidImage = img.alt === 'Image' || img.alt === '画像' || img.src.includes('twimg.com');
+              const isVisible = rect.width > IMAGE_FILTERS.CAROUSEL_MIN_WIDTH && rect.height > IMAGE_FILTERS.CAROUSEL_MIN_HEIGHT;
+
+              console.log(`Image ${index + 1}:`, {
+                src: img.src.substring(0, 60) + '...',
+                alt: img.alt,
+                size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+                isValidImage,
+                isVisible,
+                alreadyCollected: imageMap.has(img.src)
+              });
+
+              // Check if image is valid and visible
+              if (isVisible && isValidImage) {
+                if (!imageMap.has(img.src)) {
+                  console.log(`✓ Found NEW image ${imageMap.size + 1}: ${img.src.substring(0, 50)}...`);
+                  imageMap.set(img.src, img);
+                  newImagesFound++;
+                }
+              }
+            }
+          });
+          break; // Stop after finding images with first working selector
+        }
+      }
+
+      if (!foundImages) {
+        console.log('No carousel images found with any selector');
+      }
+
+      console.log(`Collection result: ${newImagesFound} new images, ${imageMap.size} total images`);
+      return newImagesFound;
+    };
+
+    // Collect initial images (X.com initially loads first 2 <li>)
+    console.log('Collecting initial images (first 2 <li> elements)...');
+    collectCurrentlyVisibleImages();
+
+    // Navigate through carousel to load remaining images
+    while (navigationCount < CAROUSEL.X.MAX_ATTEMPTS) {
+      const nextButton = this._findNextButton(container);
+      if (!nextButton) {
+        console.log('Navigation finished: No "Next" button found.');
+        break;
+      }
+
+      console.log(`\n=== Navigation ${navigationCount + 1}/${CAROUSEL.X.MAX_ATTEMPTS} ===`);
+      console.log('Clicking Next slide button...');
+
+      // Click the button
+      nextButton.click();
+      navigationCount++;
+
+      // Wait longer for X.com to lazy-load new images
+      await wait(CAROUSEL.X.WAIT_TIME + 500); // Extra 500ms for lazy loading
+
+      // Collect images after navigation
+      const newImages = collectCurrentlyVisibleImages();
+
+      // If no new images found after 2 attempts, we might have reached the end
+      if (newImages === 0 && navigationCount >= 2) {
+        console.log('No new images found in last navigation, checking if we\'ve reached the end...');
+
+        // Try one more navigation to confirm we're at the end
+        const confirmButton = this._findNextButton(container);
+        if (!confirmButton) {
+          console.log('Confirmed: No more Next button, ending navigation');
+          break;
+        }
+
+        // If button exists but no new images after 3 attempts, stop
+        if (navigationCount >= 3) {
+          console.log('No new images after 3 attempts, stopping navigation');
+          break;
+        }
+      }
+    }
+
+    console.log('\n=== X.com Carousel Navigation Complete ===');
+    console.log(`Total navigation attempts: ${navigationCount}`);
+    console.log(`Total unique images found: ${imageMap.size}`);
+
+    const finalImages = Array.from(imageMap.values());
+    finalImages.forEach((img, index) => {
+      console.log(`Final image ${index + 1}: ${img.src.substring(0, 60)}...`);
+    });
+
+    return finalImages;
+  }
+
+  _findNextButton(container) {
+    const selectors = SELECTORS.X.NEXT_BUTTONS;
+
+    for (const selector of selectors) {
+      const button = container.querySelector(selector);
+      if (button && button.offsetParent !== null) {
+        console.log(`Found next button with selector: ${selector}`);
+        return button;
+      }
+    }
+
+    // Also try finding next button in the document if not found in container
+    for (const selector of selectors) {
+      const button = document.querySelector(selector);
+      if (button && button.offsetParent !== null) {
+        console.log(`Found next button in document with selector: ${selector}`);
+        return button;
+      }
+    }
+
+    console.log('No next button found');
+    return null;
+  }
+
+  _findBoundaryElement() {
+    console.log('Looking for X.com boundary element...');
+
+    // Look for div with aria-expanded="true" which indicates the boundary
+    const expandedDivs = document.querySelectorAll('div[aria-expanded="true"]');
+    console.log(`Found ${expandedDivs.length} div elements with aria-expanded="true"`);
+
+    for (const div of expandedDivs) {
+      console.log('Found potential boundary element:', {
+        tagName: div.tagName,
+        ariaExpanded: div.getAttribute('aria-expanded'),
+        classes: div.className.substring(0, 100),
+        textContent: div.textContent.substring(0, 50) + '...'
+      });
+
+      // Return the first div with aria-expanded="true"
+      // This is typically where X.com separates main content from related/recommended content
+      return div;
+    }
+
+    console.log('No boundary element found (no div with aria-expanded="true")');
+    return null;
+  }
+}
+
 // === PLATFORM FACTORY ===
 class PlatformFactory {
   static createPlatform() {
@@ -997,6 +1341,8 @@ class PlatformFactory {
       return new InstagramPlatform();
     } else if (platform === PLATFORMS.FACEBOOK) {
       return new FacebookPlatform();
+    } else if (platform === PLATFORMS.X) {
+      return new XPlatform();
     }
 
     return null;
@@ -1078,7 +1424,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 window.addEventListener('load', () => {
   setTimeout(async () => {
     try {
+      console.log('=== Social Media Image Downloader Auto-Extraction ===');
+      console.log('Current URL:', window.location.href);
+      console.log('Platform detection starting...');
+
       const images = await extractImages();
+      console.log('Auto-extraction completed successfully:', images);
+
       chrome.runtime.sendMessage({
         action: CONTENT_MESSAGES.IMAGES_EXTRACTED,
         images,
@@ -1094,3 +1446,177 @@ window.addEventListener('load', () => {
     }
   }, 2000);
 });
+
+// === DEBUG HELPER ===
+window.testXExtraction = async () => {
+  console.log('=== Manual X.com Test ===');
+  console.log('Current URL:', window.location.href);
+  console.log('Is photo mode:', window.location.pathname.includes('/photo/'));
+
+  // Test dialog detection
+  console.log('\n--- Testing Dialog Detection ---');
+  const dialogs = ['dialog[role="dialog"]', 'div[data-testid="photoModal"]', 'div[role="dialog"]'];
+  let mainDialog = null;
+
+  for (const selector of dialogs) {
+    const dialog = document.querySelector(selector);
+    console.log(`${selector}: ${!!dialog}`);
+    if (dialog && !mainDialog) mainDialog = dialog;
+  }
+
+  if (!mainDialog) {
+    console.error('No main dialog found!');
+    return [];
+  }
+
+  // Test carousel detection
+  console.log('\n--- Testing Carousel Detection ---');
+  const carouselSelectors = ['ul[role="list"]'];
+  let carouselContainer = null;
+
+  for (const selector of carouselSelectors) {
+    const container = mainDialog.querySelector(selector);
+    console.log(`${selector}: ${!!container}`);
+    if (container && !carouselContainer) carouselContainer = container;
+  }
+
+  // Test image detection
+  console.log('\n--- Testing Image Detection ---');
+  const imageSelectors = [
+    'li[role="listitem"] img'
+  ];
+
+  for (const selector of imageSelectors) {
+    const images = mainDialog.querySelectorAll(selector);
+    console.log(`${selector}: found ${images.length} images`);
+
+    images.forEach((img, index) => {
+      const rect = img.getBoundingClientRect();
+      console.log(`  Image ${index + 1}:`, {
+        src: img.src.substring(0, 50) + '...',
+        alt: img.alt,
+        size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+        visible: rect.width > 0 && rect.height > 0
+      });
+    });
+  }
+
+  // Test button detection
+  console.log('\n--- Testing Next Button Detection ---');
+  const buttonSelectors = [
+    'button[aria-label="Next slide"]',
+    'button[aria-label="Next slide"][role="button"]',
+    'button:has(svg):has(path[d*="12.957 4.54L20.414 12"])',
+    'button:has([aria-label="Next slide"])'
+  ];
+
+  for (const selector of buttonSelectors) {
+    try {
+      const button = mainDialog.querySelector(selector);
+      console.log(`${selector}: ${!!button}`);
+      if (button) {
+        console.log(`  Button visible: ${button.offsetParent !== null}`);
+        console.log(`  Button classes: ${button.className}`);
+      }
+    } catch (error) {
+      console.log(`${selector}: ERROR - ${error.message}`);
+    }
+  }
+
+  // Test boundary element detection
+  console.log('\n--- Testing Boundary Element Detection ---');
+  const expandedDivs = document.querySelectorAll('div[aria-expanded="true"]');
+  console.log(`Found ${expandedDivs.length} div elements with aria-expanded="true"`);
+
+  expandedDivs.forEach((div, index) => {
+    console.log(`Boundary element ${index + 1}:`, {
+      tagName: div.tagName,
+      ariaExpanded: div.getAttribute('aria-expanded'),
+      classes: div.className.substring(0, 80) + '...',
+      textContent: div.textContent.substring(0, 50) + '...',
+      position: {
+        top: div.getBoundingClientRect().top,
+        bottom: div.getBoundingClientRect().bottom
+      }
+    });
+  });
+
+  // Test actual extraction
+  console.log('\n--- Testing Actual Extraction ---');
+  try {
+    const images = await extractImages();
+    console.log('Manual extraction result:', images);
+    console.log(`Successfully extracted ${images.length} images`);
+    return images;
+  } catch (error) {
+    console.error('Manual extraction error:', error);
+    return [];
+  }
+};
+
+// === X.COM BOUNDARY TEST HELPER ===
+window.testXBoundary = () => {
+  console.log('=== X.com Boundary Element Test ===');
+
+  const expandedDivs = document.querySelectorAll('div[aria-expanded="true"]');
+  console.log(`Found ${expandedDivs.length} div elements with aria-expanded="true"`);
+
+  if (expandedDivs.length === 0) {
+    console.log('❌ No boundary elements found!');
+    return [];
+  }
+
+  const boundaryInfo = [];
+
+  expandedDivs.forEach((div, index) => {
+    const rect = div.getBoundingClientRect();
+    const info = {
+      index: index + 1,
+      tagName: div.tagName,
+      ariaExpanded: div.getAttribute('aria-expanded'),
+      classes: div.className,
+      textContent: div.textContent.trim().substring(0, 100),
+      position: {
+        top: Math.round(rect.top),
+        bottom: Math.round(rect.bottom),
+        height: Math.round(rect.height)
+      },
+      visible: rect.width > 0 && rect.height > 0,
+      element: div
+    };
+
+    boundaryInfo.push(info);
+    console.log(`Boundary Element ${index + 1}:`, info);
+  });
+
+  // Test which images would be filtered
+  console.log('\n--- Testing Image Filtering ---');
+  const testImages = document.querySelectorAll('li[role="listitem"] img');
+  console.log(`Found ${testImages.length} potential images to test`);
+
+  if (expandedDivs.length > 0 && testImages.length > 0) {
+    const boundaryElement = expandedDivs[0]; // Use first boundary element
+    let beforeBoundary = 0;
+    let afterBoundary = 0;
+
+    testImages.forEach((img, index) => {
+      const position = boundaryElement.compareDocumentPosition(img);
+      const isBeforeBoundary = position & Node.DOCUMENT_POSITION_PRECEDING;
+
+      if (isBeforeBoundary) {
+        beforeBoundary++;
+        console.log(`✓ Image ${index + 1}: BEFORE boundary (keep)`);
+      } else {
+        afterBoundary++;
+        console.log(`✗ Image ${index + 1}: AFTER boundary (filter out)`);
+      }
+    });
+
+    console.log('\n--- Filter Results ---');
+    console.log(`Images BEFORE boundary (keep): ${beforeBoundary}`);
+    console.log(`Images AFTER boundary (filter): ${afterBoundary}`);
+    console.log(`Total images: ${testImages.length}`);
+  }
+
+  return boundaryInfo;
+};

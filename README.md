@@ -1,10 +1,10 @@
 # Social Snap
 
-Social Snap is a Chrome extension that allows you to download all images from Threads.com, Instagram.com, and Facebook.com posts with a single click.
+Social Snap is a Chrome extension that allows you to download all images from Threads.com, Instagram.com, Facebook.com, and X.com posts with a single click.
 
 ## Features
 
-- 🖼️ **Multi-Platform Support**: Works on Threads.com, Instagram.com, and Facebook.com
+- 🖼️ **Multi-Platform Support**: Works on Threads.com, Instagram.com, Facebook.com, and X.com
 - 🎯 **Smart URL Filtering**: Only activates on individual posts, ignores homepage/feed pages
 - 🔍 Display image thumbnail previews
 - 📊 Show total count of downloadable images
@@ -28,11 +28,12 @@ Social Snap is a Chrome extension that allows you to download all images from Th
 
 ## Usage
 
-1. Navigate to any **individual post** on **Threads.com**, **Instagram.com**, or **Facebook.com**
+1. Navigate to any **individual post** on **Threads.com**, **Instagram.com**, **Facebook.com**, or **X.com**
    - ✅ Supported: `https://www.threads.com/@username/post/postId`
    - ✅ Supported: `https://www.instagram.com/p/postId/`
    - ✅ Supported: `https://www.facebook.com/photo/?fbid=photoId`
-   - ❌ Not supported: Homepage feeds (`https://www.threads.com/`, `https://www.instagram.com/`, `https://www.facebook.com/`)
+   - ✅ Supported: `https://x.com/username/status/statusId/photo/1` - Photo mode only
+   - ❌ Not supported: Homepage feeds (`https://www.threads.com/`, `https://www.instagram.com/`, `https://www.facebook.com/`, `https://x.com/`)
 2. Click the extension icon in your browser toolbar
 3. Wait for the extension to analyze images on the page
 4. View thumbnail previews and total image count
@@ -42,6 +43,7 @@ Social Snap is a Chrome extension that allows you to download all images from Th
    - Threads: `threads_image_YYYYMMDDHHMMSS_1.jpg`
    - Instagram: `instagram_image_YYYYMMDDHHMMSS_1.jpg`
    - Facebook: `facebook_image_YYYYMMDDHHMMSS_1.jpg`
+   - X.com: `x_image_YYYYMMDDHHMMSS_1.jpg`
 
 ## Supported URLs
 
@@ -61,11 +63,16 @@ This extension **only works on individual posts**, not on homepage feeds or prof
 - `https://www.facebook.com/photo/?fbid=photoId` - Individual photos
 - `https://www.facebook.com/username/photos/photoId` - User photos
 
+**X.com:**
+- `https://x.com/username/status/statusId/photo/1` - Photo mode view (carousel mode only)
+
 ### ❌ Excluded URL Patterns
 
 **Homepage/Feed Pages:**
 - `https://www.threads.com/` - Threads homepage
 - `https://www.instagram.com/` - Instagram homepage
+- `https://x.com/` - X.com homepage
+- `https://x.com/home` - X.com home feed
 - Any URL with query parameters on homepage (e.g., `?tab=following`)
 
 **Profile Pages:**
@@ -81,8 +88,9 @@ When you try to use the extension on unsupported pages, you'll see a helpful err
 - **ThreadsPlatform**: Specialized extractor for Threads.com
 - **InstagramPlatform**: Specialized extractor for Instagram.com
 - **FacebookPlatform**: Specialized extractor for Facebook.com
+- **XPlatform**: Specialized extractor for X.com
 - **PlatformFactory**: Automatically detects and creates appropriate platform instance
-- **Extensible Design**: Easy to add new platforms (X.com, etc.)
+- **Extensible Design**: Easy to add new platforms
 
 ### Image Detection
 - **Threads.com**:
@@ -95,6 +103,12 @@ When you try to use the extension on unsupported pages, you'll see a helpful err
   - Detects images in main article containers and carousel/slideshow
   - Filters out profile pictures and UI elements
   - Supports all Instagram CDN image formats
+- **X.com**:
+  - **Photo Mode Required**: Only works in photo mode (URLs with `/photo/`)
+  - **Carousel Support**: Automatically navigates through multi-image tweets
+  - Detects images in dialog containers and carousel lists
+  - Handles X.com's dynamic loading of images
+  - Access photo mode by clicking on any image in a tweet
 - **Common Features**:
   - Parses `srcset` attribute to find highest resolution versions
   - Preserves Instagram CDN security parameters
@@ -144,7 +158,7 @@ social-snap/
 | **Threads.com** | ✅ Fully Supported | Smart comment filtering, position-based detection |
 | **Instagram.com** | ✅ Fully Supported | Smart carousel navigation, lazy loading handling, profile picture filtering |
 | **Facebook.com** | ✅ Fully Supported | Photo album navigation, individual photo extraction, automatic resolution detection |
-| **X.com (Twitter)** | 🔄 Planned | Coming in future version |
+| **X.com** | ✅ Fully Supported | Carousel navigation, dialog container detection, photo mode support |
 
 ## Notes
 
@@ -156,10 +170,11 @@ social-snap/
 ## Troubleshooting
 
 ### Cannot Detect Images
-- Ensure you are on a supported platform (Threads.com, Instagram.com, or Facebook.com) post page
+- Ensure you are on a supported platform (Threads.com, Instagram.com, Facebook.com, or X.com) post page
 - Wait for the page to fully load before opening the extension
 - **For Instagram carousels**: The extension will automatically navigate through all images, which may take 10-30 seconds
 - **For Facebook albums**: The extension will automatically navigate through photo albums
+- **For X.com carousels**: The extension will automatically navigate through multi-image tweets
 - Try refreshing the page and retry
 - Check browser console for error messages
 
@@ -249,31 +264,42 @@ The extension follows a clean, modular architecture:
 
 ### Adding New Platforms
 
-To add support for a new social media platform:
+⚠️ **CRITICAL:** When adding new platform support, the most commonly forgotten step is updating the download filename generation in `src/background/background.js`, resulting in `unknown_xxxxx.jpg` filenames.
 
-1. Create a new platform class in `src/content/platforms/new-platform.js`
-2. Extend `BasePlatform` and implement required methods
-3. Add platform detection logic to `PlatformFactory`
-4. Update `constants.js` with platform-specific selectors
-5. Test the implementation on the target platform
+**Complete New Platform Checklist:**
 
-Example:
+1. **Content Script (`src/content/content.js`):**
+   - Add platform constants and URL patterns
+   - Create new Platform class extending `BasePlatform`
+   - Update platform detection functions
+
+2. **⚠️ Background Script (`src/background/background.js`) - DON'T FORGET:**
+   - Update `downloadAllImages()` method with platform detection
+   - Update `downloadSingleImage()` method with platform detection
+
+3. **Manifest (`manifest.json`):**
+   - Add host permissions and content script matches
+
+4. **Documentation:**
+   - Update README.md and other docs
+
+**Example Background Script Update (Critical Step):**
 ```javascript
-// src/content/platforms/twitter-platform.js
-import { BasePlatform } from './base-platform.js';
-
-export class TwitterPlatform extends BasePlatform {
-  constructor() {
-    super();
-    this.platformName = 'twitter';
-  }
-
-  isCurrentPlatform() {
-    return window.location.hostname.includes('twitter.com');
-  }
-
-  extractImages() {
-    // Implementation for Twitter image extraction
-  }
+// In both downloadAllImages() and downloadSingleImage() methods:
+if (tab.url.includes('threads.com')) {
+  platformName = 'threads';
+} else if (tab.url.includes('instagram.com')) {
+  platformName = 'instagram';
+} else if (tab.url.includes('facebook.com')) {
+  platformName = 'facebook';
+} else if (tab.url.includes('x.com')) {  // ← ADD THIS
+  platformName = 'x';
 }
 ```
+
+**Testing Checklist:**
+- ✅ Verify filename starts with correct platform name (not "unknown")
+- ✅ Test image detection and extraction
+- ✅ Test multi-image carousels if applicable
+
+📖 **See [CONTRIBUTING.md](./CONTRIBUTING.md#adding-new-platform-support) for detailed development guidelines.**

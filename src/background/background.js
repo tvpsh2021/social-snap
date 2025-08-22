@@ -71,6 +71,8 @@ class DataManager {
 class DownloadManager {
   async downloadAllImages(images) {
     // Detect platform from current tab
+    // ⚠️ IMPORTANT: When adding new platform support, remember to add platform detection here
+    // to avoid filenames becoming "unknown_xxxxx.jpg"
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     let platformName = 'unknown';
 
@@ -80,6 +82,8 @@ class DownloadManager {
       platformName = 'instagram';
     } else if (tab.url.includes('facebook.com')) {
       platformName = 'facebook';
+    } else if (tab.url.includes('x.com')) {
+      platformName = 'x';
     }
 
     for (let i = 0; i < images.length; i++) {
@@ -109,6 +113,8 @@ class DownloadManager {
   async downloadSingleImage(image, index) {
     try {
       // Detect platform from current tab
+      // ⚠️ IMPORTANT: When adding new platform support, remember to add platform detection here
+      // to avoid filenames becoming "unknown_xxxxx.jpg"
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       let platformName = 'unknown';
 
@@ -118,6 +124,8 @@ class DownloadManager {
         platformName = 'instagram';
       } else if (tab.url.includes('facebook.com')) {
         platformName = 'facebook';
+      } else if (tab.url.includes('x.com')) {
+        platformName = 'x';
       }
 
       // Generate filename with platform name
