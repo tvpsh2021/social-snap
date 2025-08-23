@@ -83,16 +83,8 @@ const IMAGE_FILTERS = {
 
 const SELECTORS = {
   THREADS: {
-    PICTURE_IMAGES: 'picture img',
-    DESCRIPTIVE_IMAGES: 'img[alt*="可能是"]',
-    PICTURE_DESCRIPTIVE: 'picture img[alt*="可能是"]',
-    MAIN_CONTAINERS: [
-      'article[role="article"]:first-of-type',
-      '[data-testid*="post"]:first-of-type',
-      '[data-testid*="thread"]:first-of-type',
-      'main > div:first-child',
-      '[role="main"] > div:first-child'
-    ]
+    CONTAINER: 'div[data-pressable-container="true"]',
+    IMAGES: 'img'
   },
 
   INSTAGRAM: {
@@ -100,6 +92,10 @@ const SELECTORS = {
       'button',
     ],
     POST_IMAGES: 'img',
+    MAIN_ELEMENT: 'main',
+    CAROUSEL_INDICATOR: 'ul li',
+    UL_ELEMENT: 'ul',
+    BOUNDARY_ELEMENTS: 'div, h2, span'
   },
 
   FACEBOOK: {
@@ -127,7 +123,8 @@ const SELECTORS = {
     ],
     MAIN_DIALOG: [
       'div[role="dialog"]'
-    ]
+    ],
+    BOUNDARY_INDICATOR: 'div[aria-expanded="true"]'
   }
 };
 
@@ -326,95 +323,22 @@ class ThreadsPlatform extends BasePlatform {
   extractImages() {
     log('=== Starting Threads image extraction ===');
 
-    // Strategy 1: Find images in picture tags
-    const pictureImages = document.querySelectorAll(SELECTORS.THREADS.PICTURE_IMAGES);
-    log('Strategy 1 - Images in picture tags:', pictureImages.length);
+    // Find the first div with data-pressable-container="true"
+    const firstContainer = document.querySelector(SELECTORS.THREADS.CONTAINER);
+    log('First container found:', firstContainer);
 
-    // Strategy 2: Find images with descriptive alt text
-    const chineseImages = document.querySelectorAll(SELECTORS.THREADS.DESCRIPTIVE_IMAGES);
-    log('Strategy 2 - Images with descriptive alt text:', chineseImages.length);
-
-    // Strategy 3: Combination - images with descriptive alt text in picture tags
-    const pictureChineseImages = document.querySelectorAll(SELECTORS.THREADS.PICTURE_DESCRIPTIVE);
-    log('Strategy 3 - Descriptive images in picture tags:', pictureChineseImages.length);
-
-    // Try to distinguish main post from comment section
-    let mainPostImages = [];
-
-    // Method 1: Find main post container
-    const possibleMainContainers = SELECTORS.THREADS.MAIN_CONTAINERS;
-
-    for (const selector of possibleMainContainers) {
-      const container = document.querySelector(selector);
-      if (container) {
-        const containerImages = container.querySelectorAll(SELECTORS.THREADS.PICTURE_DESCRIPTIVE);
-        if (containerImages.length > 0) {
-          log(`Found ${containerImages.length} images in container "${selector}"`);
-          mainPostImages = Array.from(containerImages);
-          break;
-        }
-      }
+    if (!firstContainer) {
+      log(`No container with ${SELECTORS.THREADS.CONTAINER} found`);
+      return [];
     }
 
-    // Method 2: If no container found, use position-based detection
-    if (mainPostImages.length === 0) {
-      log('Using position-based detection method...');
-      const allPictureImages = Array.from(pictureChineseImages);
+    // Get all img elements within this first container
+    const targetImages = firstContainer.querySelectorAll(SELECTORS.THREADS.IMAGES);
+    log(`Found ${targetImages.length} images in the first container`);
 
-      // Analyze each image's context to determine if it's from the main post
-      const imagesWithPosition = allPictureImages.map(img => {
-        const rect = img.getBoundingClientRect();
-        const isInComment = this._isImageInComment(img);
-
-        return {
-          img,
-          y: rect.top,
-          isInComment: !!isInComment,
-          domIndex: Array.from(document.querySelectorAll('img')).indexOf(img),
-          alt: img.alt
-        };
-      });
-
-      // Sort and take earlier images (assumed to be from main post)
-      imagesWithPosition.sort((a, b) => a.domIndex - b.domIndex);
-
-      // Filter out images that are clearly from comment section
-      const filteredImages = imagesWithPosition.filter(item => !item.isInComment);
-
-      log('Position analysis results:', {
-        totalImages: imagesWithPosition.length,
-        afterFiltering: filteredImages.length,
-        commentImages: imagesWithPosition.length - filteredImages.length
-      });
-
-      // Additional content filtering
-      const contentFilteredImages = filteredImages.filter(item => {
-        return this._shouldKeepImage(item.alt);
-      });
-
-      log('Content filtering results:', {
-        original: filteredImages.length,
-        afterContentFiltering: contentFilteredImages.length
-      });
-
-      // Select final image collection
-      if (contentFilteredImages.length >= 1) {
-        mainPostImages = contentFilteredImages.map(item => item.img);
-        log('Using content-filtered results');
-      } else if (filteredImages.length >= 1) {
-        mainPostImages = filteredImages.map(item => item.img);
-        log('Using position-filtered results');
-      } else {
-        mainPostImages = imagesWithPosition.map(item => item.img);
-        log('Using all found images (no filtering)');
-      }
-
-      if (mainPostImages.length > 20) {
-        logWarn(`Abnormally high image count (${mainPostImages.length} images), might include comment section images`);
-      }
-    }
-
-    log(`Final selected main post image count: ${mainPostImages.length}`);
+    // Skip the first image (user profile picture)
+    const mainPostImages = Array.from(targetImages).slice(1);
+    log(`Skipped first image (profile picture), selected ${mainPostImages.length} images`);
 
     const imageData = [];
     mainPostImages.forEach((img, index) => {
@@ -423,57 +347,6 @@ class ThreadsPlatform extends BasePlatform {
 
     log('Extracted image information:', imageData);
     return imageData;
-  }
-
-  _isImageInComment(img) {
-    return (
-      img.closest('[data-testid*="comment"]') ||
-      img.closest('[data-testid*="reply"]') ||
-      img.closest('[role="article"]')?.querySelector('[data-testid*="reply"]') ||
-      img.closest('div[class*="comment"]') ||
-      img.closest('div[class*="reply"]') ||
-      this._isNearUsernameLink(img) ||
-      this._isAfterMainPost(img)
-    );
-  }
-
-  _isNearUsernameLink(img) {
-    const userLink = img.closest('div')?.querySelector('a[href*="/@"]');
-    if (userLink) {
-      const mainAuthorSection = document.querySelector('[role="main"], main, .main-content')?.querySelector('a[href*="/@"]');
-      if (mainAuthorSection) {
-        const isMainAuthor = userLink.href === mainAuthorSection.href;
-        const linkIndex = Array.from(document.querySelectorAll('a')).indexOf(userLink);
-        const mainLinkIndex = Array.from(document.querySelectorAll('a')).indexOf(mainAuthorSection);
-        return !isMainAuthor && (linkIndex > mainLinkIndex + 10);
-      }
-    }
-    return false;
-  }
-
-  _isAfterMainPost(img) {
-    const mainInteractionButtons = document.querySelectorAll('button[aria-label*="Like"], button:has(img[alt="Like"])');
-    if (mainInteractionButtons.length > 0) {
-      const firstInteractionButton = mainInteractionButtons[0];
-      const buttonIndex = Array.from(document.querySelectorAll('*')).indexOf(firstInteractionButton);
-      const imgIndex = Array.from(document.querySelectorAll('*')).indexOf(img.closest('div'));
-      return imgIndex > buttonIndex + 100;
-    }
-    return false;
-  }
-
-  _shouldKeepImage(alt) {
-    const altLower = alt.toLowerCase();
-    const isDefiniteComment =
-      (altLower.includes('연합뉴스') || altLower.includes('news')) ||
-      (altLower.includes('4 個人') && altLower.includes('顯示的文字')) ||
-      (altLower.includes('文字') && altLower.includes('4 個人') && altLower.includes('顯示'));
-
-    const shouldKeep = !isDefiniteComment;
-    if (!shouldKeep) {
-      log(`Filtered out image: ${alt.substring(0, 60)}...`);
-    }
-    return shouldKeep;
   }
 }
 
@@ -485,21 +358,21 @@ class InstagramPlatform extends BasePlatform {
   }
 
   isCurrentPlatform() {
-    return window.location.hostname.includes('instagram.com');
+    return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.INSTAGRAM]);
   }
 
   async extractImages() {
     log('=== Starting Instagram image extraction ===');
     await wait(CAROUSEL.INSTAGRAM.INITIAL_WAIT);
 
-    const mainElement = document.querySelector('main');
+    const mainElement = document.querySelector(SELECTORS.INSTAGRAM.MAIN_ELEMENT);
     if (!mainElement) {
       log('No <main> element found. Cannot extract images.');
       return [];
     }
 
     // Use the presence of a <ul> element to determine if it's a carousel
-    const isCarousel = !!mainElement.querySelector('ul li');
+    const isCarousel = !!mainElement.querySelector(SELECTORS.INSTAGRAM.CAROUSEL_INDICATOR);
     let mainPostImages = [];
 
     if (isCarousel) {
@@ -540,7 +413,7 @@ class InstagramPlatform extends BasePlatform {
   }
 
   _findBoundaryElement() {
-    const allDivs = document.querySelectorAll('div, h2, span');
+    const allDivs = document.querySelectorAll(SELECTORS.INSTAGRAM.BOUNDARY_ELEMENTS);
     for (const el of allDivs) {
       if (el.textContent.trim().startsWith('More posts from')) {
         log('Found boundary element:', el);
@@ -574,7 +447,7 @@ class InstagramPlatform extends BasePlatform {
     };
 
     const collectCurrentlyVisibleImage = () => {
-      const ul =  container.querySelector('ul');
+      const ul =  container.querySelector(SELECTORS.INSTAGRAM.UL_ELEMENT);
       if (!ul) return;
 
       const listItems = Array.from(ul.children).filter(li => li instanceof HTMLLIElement);
@@ -1174,7 +1047,7 @@ class XPlatform extends BasePlatform {
     log('Looking for X.com boundary element...');
 
     // Look for div with aria-expanded="true" which indicates the boundary
-    const expandedDivs = document.querySelectorAll('div[aria-expanded="true"]');
+    const expandedDivs = document.querySelectorAll(SELECTORS.X.BOUNDARY_INDICATOR);
     log(`Found ${expandedDivs.length} div elements with aria-expanded="true"`);
 
     for (const div of expandedDivs) {
