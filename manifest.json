@@ -44,7 +44,7 @@
         "https://www.instagram.com/reel/*",
         "https://www.facebook.com/photo/*",
         "https://www.facebook.com/*/photos/*",
-        "https://x.com/*/status/*/photo/*"
+        "https://x.com/*/status/*"
       ],
       "js": ["src/content/content.js"]
     }

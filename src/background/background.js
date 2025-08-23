@@ -25,6 +25,7 @@ function getFileExtension(url) {
     return 'jpg';
   } catch (error) {
     console.log('Unable to parse URL, using default extension jpg');
+    console.error(error);
     return 'jpg';
   }
 }
