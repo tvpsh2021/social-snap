@@ -51,6 +51,10 @@ const HOMEPAGE_PATTERNS = [
   /^https:\/\/x\.com\/\?[^/]*$/                           // X homepage with query params
 ];
 
+const GENERAL_CONFIG = {
+  ON_LOAD_WAIT: 1000,
+};
+
 const CAROUSEL = {
   INSTAGRAM: {
     INITIAL_WAIT: 500,
@@ -140,15 +144,9 @@ const SELECTORS = {
 
   X: {
     CAROUSEL_CONTAINER: [
-      // 'dialog ul',
-      // 'dialog div[role="group"] ul',
-      // 'div[data-testid*="carousel"] ul'
       'ul[role="list"]'
     ],
     CAROUSEL_IMAGES: [
-      // 'dialog ul li img',
-      // 'dialog div[role="group"] ul li img',
-      // 'div[data-testid*="carousel"] ul li img'
       'li[role="listitem"] img'
     ],
     NEXT_BUTTONS: [
@@ -250,22 +248,6 @@ const CONTENT_MESSAGES = {
   IMAGES_EXTRACTED: 'imagesExtracted',
   EXTRACTION_ERROR: 'extractionError'
 };
-
-const POPUP_MESSAGES = {
-  EXTRACT_IMAGES: 'extractImages',
-  GET_CURRENT_IMAGES: 'getCurrentImages'
-};
-
-const createSuccessResponse = (data) => ({
-  success: true,
-  ...data
-});
-
-const createErrorResponse = (errorObj, message = 'Operation failed') => ({
-  success: false,
-  error: errorObj.message || errorObj,
-  message
-});
 
 // === BASE PLATFORM CLASS ===
 class BasePlatform {
@@ -1405,21 +1387,6 @@ async function extractImages() {
   }
 }
 
-// === MESSAGE LISTENERS ===
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === POPUP_MESSAGES.EXTRACT_IMAGES) {
-    extractImages()
-      .then(images => {
-        sendResponse(createSuccessResponse({ images, count: images.length }));
-      })
-      .catch(error => {
-        console.error('Image extraction error:', error);
-        sendResponse(createErrorResponse(error, 'Failed to extract images'));
-      });
-    return true;
-  }
-});
-
 // === AUTO EXTRACTION ===
 window.addEventListener('load', () => {
   setTimeout(async () => {
@@ -1444,179 +1411,5 @@ window.addEventListener('load', () => {
         count: 0
       });
     }
-  }, 2000);
+  }, GENERAL_CONFIG.ON_LOAD_WAIT);
 });
-
-// === DEBUG HELPER ===
-window.testXExtraction = async () => {
-  console.log('=== Manual X.com Test ===');
-  console.log('Current URL:', window.location.href);
-  console.log('Is photo mode:', window.location.pathname.includes('/photo/'));
-
-  // Test dialog detection
-  console.log('\n--- Testing Dialog Detection ---');
-  const dialogs = ['dialog[role="dialog"]', 'div[data-testid="photoModal"]', 'div[role="dialog"]'];
-  let mainDialog = null;
-
-  for (const selector of dialogs) {
-    const dialog = document.querySelector(selector);
-    console.log(`${selector}: ${!!dialog}`);
-    if (dialog && !mainDialog) mainDialog = dialog;
-  }
-
-  if (!mainDialog) {
-    console.error('No main dialog found!');
-    return [];
-  }
-
-  // Test carousel detection
-  console.log('\n--- Testing Carousel Detection ---');
-  const carouselSelectors = ['ul[role="list"]'];
-  let carouselContainer = null;
-
-  for (const selector of carouselSelectors) {
-    const container = mainDialog.querySelector(selector);
-    console.log(`${selector}: ${!!container}`);
-    if (container && !carouselContainer) carouselContainer = container;
-  }
-
-  // Test image detection
-  console.log('\n--- Testing Image Detection ---');
-  const imageSelectors = [
-    'li[role="listitem"] img'
-  ];
-
-  for (const selector of imageSelectors) {
-    const images = mainDialog.querySelectorAll(selector);
-    console.log(`${selector}: found ${images.length} images`);
-
-    images.forEach((img, index) => {
-      const rect = img.getBoundingClientRect();
-      console.log(`  Image ${index + 1}:`, {
-        src: img.src.substring(0, 50) + '...',
-        alt: img.alt,
-        size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
-        visible: rect.width > 0 && rect.height > 0
-      });
-    });
-  }
-
-  // Test button detection
-  console.log('\n--- Testing Next Button Detection ---');
-  const buttonSelectors = [
-    'button[aria-label="Next slide"]',
-    'button[aria-label="Next slide"][role="button"]',
-    'button:has(svg):has(path[d*="12.957 4.54L20.414 12"])',
-    'button:has([aria-label="Next slide"])'
-  ];
-
-  for (const selector of buttonSelectors) {
-    try {
-      const button = mainDialog.querySelector(selector);
-      console.log(`${selector}: ${!!button}`);
-      if (button) {
-        console.log(`  Button visible: ${button.offsetParent !== null}`);
-        console.log(`  Button classes: ${button.className}`);
-      }
-    } catch (error) {
-      console.log(`${selector}: ERROR - ${error.message}`);
-    }
-  }
-
-  // Test boundary element detection
-  console.log('\n--- Testing Boundary Element Detection ---');
-  const expandedDivs = document.querySelectorAll('div[aria-expanded="true"]');
-  console.log(`Found ${expandedDivs.length} div elements with aria-expanded="true"`);
-
-  expandedDivs.forEach((div, index) => {
-    console.log(`Boundary element ${index + 1}:`, {
-      tagName: div.tagName,
-      ariaExpanded: div.getAttribute('aria-expanded'),
-      classes: div.className.substring(0, 80) + '...',
-      textContent: div.textContent.substring(0, 50) + '...',
-      position: {
-        top: div.getBoundingClientRect().top,
-        bottom: div.getBoundingClientRect().bottom
-      }
-    });
-  });
-
-  // Test actual extraction
-  console.log('\n--- Testing Actual Extraction ---');
-  try {
-    const images = await extractImages();
-    console.log('Manual extraction result:', images);
-    console.log(`Successfully extracted ${images.length} images`);
-    return images;
-  } catch (error) {
-    console.error('Manual extraction error:', error);
-    return [];
-  }
-};
-
-// === X.COM BOUNDARY TEST HELPER ===
-window.testXBoundary = () => {
-  console.log('=== X.com Boundary Element Test ===');
-
-  const expandedDivs = document.querySelectorAll('div[aria-expanded="true"]');
-  console.log(`Found ${expandedDivs.length} div elements with aria-expanded="true"`);
-
-  if (expandedDivs.length === 0) {
-    console.log('❌ No boundary elements found!');
-    return [];
-  }
-
-  const boundaryInfo = [];
-
-  expandedDivs.forEach((div, index) => {
-    const rect = div.getBoundingClientRect();
-    const info = {
-      index: index + 1,
-      tagName: div.tagName,
-      ariaExpanded: div.getAttribute('aria-expanded'),
-      classes: div.className,
-      textContent: div.textContent.trim().substring(0, 100),
-      position: {
-        top: Math.round(rect.top),
-        bottom: Math.round(rect.bottom),
-        height: Math.round(rect.height)
-      },
-      visible: rect.width > 0 && rect.height > 0,
-      element: div
-    };
-
-    boundaryInfo.push(info);
-    console.log(`Boundary Element ${index + 1}:`, info);
-  });
-
-  // Test which images would be filtered
-  console.log('\n--- Testing Image Filtering ---');
-  const testImages = document.querySelectorAll('li[role="listitem"] img');
-  console.log(`Found ${testImages.length} potential images to test`);
-
-  if (expandedDivs.length > 0 && testImages.length > 0) {
-    const boundaryElement = expandedDivs[0]; // Use first boundary element
-    let beforeBoundary = 0;
-    let afterBoundary = 0;
-
-    testImages.forEach((img, index) => {
-      const position = boundaryElement.compareDocumentPosition(img);
-      const isBeforeBoundary = position & Node.DOCUMENT_POSITION_PRECEDING;
-
-      if (isBeforeBoundary) {
-        beforeBoundary++;
-        console.log(`✓ Image ${index + 1}: BEFORE boundary (keep)`);
-      } else {
-        afterBoundary++;
-        console.log(`✗ Image ${index + 1}: AFTER boundary (filter out)`);
-      }
-    });
-
-    console.log('\n--- Filter Results ---');
-    console.log(`Images BEFORE boundary (keep): ${beforeBoundary}`);
-    console.log(`Images AFTER boundary (filter): ${afterBoundary}`);
-    console.log(`Total images: ${testImages.length}`);
-  }
-
-  return boundaryInfo;
-};

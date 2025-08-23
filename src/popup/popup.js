@@ -13,13 +13,6 @@ const BACKGROUND_MESSAGES = {
   DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage'
 };
 
-// === CONSTANTS ===
-const PLATFORM_HOSTNAMES = {
-  'threads': 'threads.com',
-  'instagram': 'instagram.com',
-  'facebook': 'facebook.com'
-};
-
 // === STATUS DISPLAY COMPONENT ===
 class StatusDisplay {
   constructor() {
