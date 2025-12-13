@@ -100,8 +100,7 @@ const SELECTORS = {
 
   FACEBOOK: {
     NEXT_BUTTONS: [
-      'div[data-visualcompletion="ignore-dynamic"]:nth-of-type(2) i[data-visualcompletion="css-img"]',
-
+      'div[data-visualcompletion="ignore-dynamic"]:nth-of-type(2) .html-div',
     ],
     POST_IMAGES: [
       'div[role="main"] img',
