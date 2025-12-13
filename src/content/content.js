@@ -65,7 +65,7 @@ const CAROUSEL = {
   FACEBOOK: {
     INITIAL_WAIT: 1000,
     WAIT_TIME: 1000,
-    MAX_ATTEMPTS: 50,
+    MAX_ATTEMPTS: 100,
   },
   X: {
     INITIAL_WAIT: 500,
@@ -89,7 +89,7 @@ const SELECTORS = {
 
   INSTAGRAM: {
     NEXT_BUTTONS: [
-      'button',
+      'button[tabindex="-1"]',
     ],
     POST_IMAGES: 'img',
     MAIN_ELEMENT: 'main',
@@ -502,9 +502,9 @@ class InstagramPlatform extends BasePlatform {
     const selectors = container.querySelectorAll(SELECTORS.INSTAGRAM.NEXT_BUTTONS);
 
     return Array.from(selectors).find(button => {
-      if (button.offsetParent !== null) {
-        const computedStyle = window.getComputedStyle(button);
-        return computedStyle.right === '0px';
+      const computedStyle = window.getComputedStyle(button);
+      if (computedStyle.right === '0px') {
+        return true;
       }
       return false;
     }) || null;
