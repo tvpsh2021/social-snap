@@ -322,11 +322,34 @@ class ThreadsPlatform extends BasePlatform {
     return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.THREADS]);
   }
 
+  _findTargetContainer() {
+    const allContainers = document.querySelectorAll(SELECTORS.THREADS.CONTAINER);
+    if (allContainers.length === 0) return null;
+
+    // Extract post ID from current URL (e.g. /@username/post/ABC123 or /t/ABC123)
+    const pathname = window.location.pathname;
+    const postIdMatch = pathname.match(/\/@[^/]+\/post\/([^/]+)/) || pathname.match(/\/t\/([^/]+)/);
+    const postId = postIdMatch?.[1];
+
+    if (postId) {
+      const matched = Array.from(allContainers).find(container =>
+        container.querySelector(`a[href*="/${postId}"]`)
+      );
+      if (matched) {
+        log(`Found target container by post ID: ${postId}`);
+        return matched;
+      }
+      log(`No container matched post ID "${postId}", falling back to first`);
+    }
+
+    return allContainers[0];
+  }
+
   extractImages() {
     log('=== Starting Threads image extraction ===');
 
-    const firstContainer = document.querySelector(SELECTORS.THREADS.CONTAINER);
-    log('First container found:', firstContainer);
+    const firstContainer = this._findTargetContainer();
+    log('Target container found:', firstContainer);
 
     if (!firstContainer) {
       log(`No container with ${SELECTORS.THREADS.CONTAINER} found`);
