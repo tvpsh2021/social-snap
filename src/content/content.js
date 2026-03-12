@@ -84,7 +84,9 @@ const IMAGE_FILTERS = {
 const SELECTORS = {
   THREADS: {
     CONTAINER: 'div[data-pressable-container="true"]',
-    IMAGES: 'img'
+    IMAGES: 'img',
+    PICTURE_IMAGES: 'picture img',
+    VIDEOS: 'video'
   },
 
   INSTAGRAM: {
@@ -178,7 +180,7 @@ function getFileExtension(url) {
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
-    const match = pathname.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    const match = pathname.match(/\.(jpg|jpeg|png|gif|webp|mp4)$/i);
     if (match) {
       return match[1].toLowerCase();
     }
@@ -188,6 +190,7 @@ function getFileExtension(url) {
       return searchParams.get('format');
     }
 
+    if (url.includes('mp4')) return 'mp4';
     if (url.includes('jpg') || url.includes('jpeg')) return 'jpg';
     if (url.includes('png')) return 'png';
     if (url.includes('webp')) return 'webp';
@@ -322,7 +325,6 @@ class ThreadsPlatform extends BasePlatform {
   extractImages() {
     log('=== Starting Threads image extraction ===');
 
-    // Find the first div with data-pressable-container="true"
     const firstContainer = document.querySelector(SELECTORS.THREADS.CONTAINER);
     log('First container found:', firstContainer);
 
@@ -331,21 +333,57 @@ class ThreadsPlatform extends BasePlatform {
       return [];
     }
 
-    // Get all img elements within this first container
-    const targetImages = firstContainer.querySelectorAll(SELECTORS.THREADS.IMAGES);
-    log(`Found ${targetImages.length} images in the first container`);
+    const allImgs = firstContainer.querySelectorAll(SELECTORS.THREADS.IMAGES);
+    const pictureImgs = firstContainer.querySelectorAll(SELECTORS.THREADS.PICTURE_IMAGES);
+    const videos = firstContainer.querySelectorAll(SELECTORS.THREADS.VIDEOS);
 
-    // Skip the first image (user profile picture)
-    const mainPostImages = Array.from(targetImages).slice(1);
-    log(`Skipped first image (profile picture), selected ${mainPostImages.length} images`);
+    log(`Found ${allImgs.length} total imgs (${pictureImgs.length} in <picture>), ${videos.length} videos`);
 
-    const imageData = [];
-    mainPostImages.forEach((img, index) => {
-      imageData.push(this.createImageData(img, index));
-    });
+    const mediaData = [];
 
-    log('Extracted image information:', imageData);
-    return imageData;
+    // Carousel images: inside <picture> elements (no profile picture here)
+    if (pictureImgs.length > 0) {
+      pictureImgs.forEach((img, index) => {
+        mediaData.push({ ...this.createImageData(img, index), mediaType: 'image' });
+      });
+    } else if (videos.length === 0) {
+      // Plain image post (no <picture> wrapper, no video): skip profile picture
+      Array.from(allImgs).slice(1).forEach((img, index) => {
+        mediaData.push({ ...this.createImageData(img, index), mediaType: 'image' });
+      });
+    }
+
+    // Videos: cover images are imgs NOT inside <picture>, skip first (profile picture)
+    if (videos.length > 0) {
+      const coverImgs = Array.from(allImgs)
+        .filter(img => !img.closest('picture'))
+        .slice(1);
+
+      videos.forEach((video, index) => {
+        if (!video.src) {
+          log(`Video ${index + 1} has no src, skipping`);
+          return;
+        }
+
+        const thumbnailUrl = coverImgs[index] ? coverImgs[index].src : '';
+        log(`Video ${index + 1}:`, {
+          src: video.src.substring(0, 80),
+          thumbnailUrl: thumbnailUrl.substring(0, 80)
+        });
+
+        mediaData.push({
+          index: mediaData.length + 1,
+          alt: 'Video',
+          thumbnailUrl,
+          fullSizeUrl: video.src,
+          maxWidth: 0,
+          mediaType: 'video'
+        });
+      });
+    }
+
+    log('Extracted media information:', mediaData);
+    return mediaData;
   }
 }
 

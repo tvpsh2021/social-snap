@@ -1,6 +1,6 @@
 # Contributing Guidelines
 
-Thank you for your interest in contributing to the Threads Image Downloader project! This document outlines the development standards and practices that all contributors must follow.
+Thank you for your interest in contributing to the Social Snap project! This document outlines the development standards and practices that all contributors must follow.
 
 ## 📋 Development Standards
 
@@ -63,49 +63,27 @@ function 提取頁面圖片() {
 
 ### Development Tools
 
-This project uses multiple tools for code quality and formatting consistency:
+This project uses ESLint for code quality and consistency:
 
-#### JavaScript Linting (ESLint)
-```bash
-# Run JavaScript linting
-npm run lint:js
-
-# Auto-fix JavaScript linting issues
-npm run lint:js:fix
-```
-
-#### HTML Linting (HTMLHint + Prettier)
-```bash
-# Run HTML linting
-npm run lint:html
-
-# Format HTML files
-npm run format:html
-```
-
-#### Combined Commands
 ```bash
 # Install dependencies
 npm install
 
-# Run all linting (JS + HTML)
+# Run linting
 npm run lint
 
-# Auto-fix all issues (JS + HTML)
+# Auto-fix linting issues
 npm run lint:fix
 ```
 
-**Configuration Files:**
-- `.eslintrc.js` - JavaScript linting rules
-- `.htmlhintrc` - HTML linting rules
-- `.prettierrc` - HTML/CSS formatting rules
-- `.editorconfig` - Editor formatting consistency
+**Configuration:**
+- `eslint.config.mjs` - ESLint flat config with modern JavaScript rules
 
-**HTML Standards:**
-- Use kebab-case for IDs and classes (e.g., `image-count`, not `imageCount`)
-- Use double quotes for attributes
+**Code Quality Standards:**
+- Follow ESLint rules for consistency
 - Use 2-space indentation
-- Ensure proper DOCTYPE and semantic HTML structure
+- Prefer `const` and `let` over `var`
+- Use meaningful variable and function names
 
 ### Commit Message Format
 
@@ -158,9 +136,10 @@ refactor(background): improve download error handling
 ### Testing
 
 - Test all changes manually in Chrome browser
-- Verify functionality on different Threads.com pages
+- Verify functionality on supported social media platforms
 - Ensure the extension works with various image formats and layouts
-- Test download functionality with different file sizes
+- Test download functionality with single images and multi-image posts
+- Test carousel navigation for platforms that support it
 
 ### Documentation
 
@@ -171,120 +150,64 @@ refactor(background): improve download error handling
 
 ## 🔧 Adding New Platform Support
 
-When adding support for a new social media platform, follow this checklist to ensure all components are properly updated:
+When adding support for a new social media platform, follow this checklist:
 
-### ⚠️ **CRITICAL: Common Issue - Filename Prefix**
+### ⚠️ CRITICAL: Don't Forget Filename Generation
 
-**The most commonly forgotten step when adding new platform support is updating the download manager filename generation in `background.js`. This results in downloaded files being named `unknown_xxxxx.jpg` instead of `platformname_xxxxx.jpg`.**
+**The most commonly forgotten step is updating platform detection in `src/background/background.js` for filename generation. Forgetting this results in `unknown_xxxxx.jpg` instead of `platformname_xxxxx.jpg`.**
 
-### New Platform Development Checklist
+### Development Checklist
 
-**1. Content Script (src/content/content.js):**
-- [ ] Add platform to `PLATFORMS` constant
-- [ ] Add hostname to `PLATFORM_HOSTNAMES` constant
-- [ ] Add URL patterns to `SINGLE_POST_PATTERNS`
-- [ ] Add homepage patterns to `HOMEPAGE_PATTERNS` (if needed)
-- [ ] Add selectors to `SELECTORS` constant
-- [ ] Create new Platform class (e.g., `TwitterPlatform extends BasePlatform`)
-- [ ] Update `getPlatformFromUrl()` function
-- [ ] Update `PlatformFactory.createPlatform()` method
+**1. Content Script (`src/content/content.js`):**
+- Add platform constants (name, hostname, URL patterns)
+- Create platform-specific extraction logic
+- Update platform detection functions
 
-**2. Background Script (src/background/background.js) - ⚠️ DON'T FORGET:**
-- [ ] **Update `downloadAllImages()` method** - Add platform detection for filename generation
-- [ ] **Update `downloadSingleImage()` method** - Add platform detection for filename generation
+**2. ⚠️ Background Script (`src/background/background.js`):**
+- **Update `downloadAllImages()` method** with platform name detection
+- **Update `downloadSingleImage()` method** with platform name detection
 
-**3. Manifest (manifest.json):**
-- [ ] Add host permissions for the new platform
-- [ ] Add content script matches for the new platform URLs
-- [ ] Update description to include the new platform
+**3. Manifest (`manifest.json`):**
+- Add host permissions for the platform and its CDN
+- Add content script URL match patterns
 
 **4. Documentation:**
-- [ ] Update README.md with new platform information
-- [ ] Update supported URL patterns
-- [ ] Update usage examples
-- [ ] Update troubleshooting section
+- Update README.md with platform information and supported URLs
+- Update troubleshooting section if needed
 
-### Example: Adding X.com Support
+### Code Example: Platform Detection in Background Script
 
-**Step 1: Content Script Updates**
 ```javascript
-// Add to PLATFORMS constant
-const PLATFORMS = {
-  THREADS: 'threads',
-  INSTAGRAM: 'instagram',
-  FACEBOOK: 'facebook',
-  X: 'x'  // ← Add this
-};
+// In both downloadAllImages() and downloadSingleImage():
+let platformName = 'unknown';
 
-// Update getPlatformFromUrl()
-function getPlatformFromUrl(url) {
-  // ... existing code ...
-  } else if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.X])) {
-    return PLATFORMS.X;  // ← Add this
-  }
-  return null;
-}
-```
-
-**Step 2: Background Script Updates** ⚠️ **CRITICAL STEP**
-```javascript
-// In downloadAllImages() method:
 if (tab.url.includes('threads.com')) {
   platformName = 'threads';
 } else if (tab.url.includes('instagram.com')) {
   platformName = 'instagram';
 } else if (tab.url.includes('facebook.com')) {
   platformName = 'facebook';
-} else if (tab.url.includes('x.com')) {  // ← Add this
+} else if (tab.url.includes('x.com')) {
   platformName = 'x';
 }
+// Add your new platform here ↑
 
-// ALSO update downloadSingleImage() method with the same logic!
+const filename = `${platformName}_image_${timestamp}_${index}.jpg`;
 ```
 
-**Step 3: Manifest Updates**
-```json
-{
-  "host_permissions": [
-    "https://x.com/*",  // ← Add this
-    "https://*.twimg.com/*"  // ← Add CDN if needed
-  ],
-  "content_scripts": [{
-    "matches": [
-      "https://x.com/*/status/*/photo/*"  // ← Add this
-    ]
-  }]
-}
-```
+### Testing Checklist
 
-### Testing New Platform Support
-
-1. **Filename Test**: Download an image and verify filename starts with correct platform name
-2. **Functionality Test**: Test image detection and extraction
-3. **Boundary Test**: Test any boundary filtering logic
-4. **Multi-image Test**: Test carousel/gallery navigation if applicable
-
-### Debugging Tools
-
-When developing new platform support, use these debugging functions:
-
-```javascript
-// For general platform testing
-testXExtraction()
-
-// For boundary filtering testing
-testXBoundary()
-
-// Check platform detection
-console.log('Platform detected:', getPlatformFromUrl(window.location.href));
-```
+- ✅ Verify filenames use correct platform prefix (not "unknown")
+- ✅ Test image detection and extraction
+- ✅ Test multi-image carousels/galleries if applicable
+- ✅ Test on different post types and layouts
 
 ## 🚀 Getting Started
 
 1. **Fork and Clone:**
    ```bash
-   git clone https://github.com/your-username/threads-downloader.git
-   cd threads-downloader
+   git clone https://github.com/your-username/social-snap.git
+   cd social-snap
    ```
 
 2. **Load Extension:**

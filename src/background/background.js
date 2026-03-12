@@ -7,7 +7,7 @@ function getFileExtension(url) {
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
-    const match = pathname.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    const match = pathname.match(/\.(jpg|jpeg|png|gif|webp|mp4)$/i);
     if (match) {
       return match[1].toLowerCase();
     }
@@ -17,6 +17,7 @@ function getFileExtension(url) {
       return searchParams.get('format');
     }
 
+    if (url.includes('mp4')) return 'mp4';
     if (url.includes('jpg') || url.includes('jpeg')) return 'jpg';
     if (url.includes('png')) return 'png';
     if (url.includes('webp')) return 'webp';
@@ -90,18 +91,17 @@ class DownloadManager {
     for (let i = 0; i < images.length; i++) {
       const image = images[i];
       try {
-        // Generate filename with platform name
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
         const extension = getFileExtension(image.fullSizeUrl);
-        const filename = `${platformName}_image_${timestamp}_${i + 1}.${extension}`;
+        const mediaType = image.mediaType === 'video' ? 'video' : 'image';
+        const filename = `${platformName}_${mediaType}_${timestamp}_${i + 1}.${extension}`;
 
-        // Start download
         await chrome.downloads.download({
           url: image.fullSizeUrl,
           filename
         });
 
-        console.log(`Download image ${i + 1}/${images.length}: ${filename}`);
+        console.log(`Download ${mediaType} ${i + 1}/${images.length}: ${filename}`);
 
         // Add small delay to avoid downloading too many files simultaneously
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -129,18 +129,17 @@ class DownloadManager {
         platformName = 'x';
       }
 
-      // Generate filename with platform name
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
       const extension = getFileExtension(image.fullSizeUrl);
-      const filename = `${platformName}_image_${timestamp}_${index}.${extension}`;
+      const mediaType = image.mediaType === 'video' ? 'video' : 'image';
+      const filename = `${platformName}_${mediaType}_${timestamp}_${index}.${extension}`;
 
-      // Start download
       await chrome.downloads.download({
         url: image.fullSizeUrl,
         filename
       });
 
-      console.log(`Download single image: ${filename}`);
+      console.log(`Download single ${mediaType}: ${filename}`);
     } catch (error) {
       console.error('Download single image failed:', error);
       throw error;

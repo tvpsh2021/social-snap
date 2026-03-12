@@ -90,14 +90,34 @@
         object-fit: cover;
       }
 
+      .video-badge {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        background: rgba(0, 0, 0, 0.65);
+        color: white;
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 5px;
+        border-radius: 4px;
+        letter-spacing: 0.5px;
+        z-index: 5;
+        pointer-events: none;
+      }
+
+      .download-buttons {
+        display: flex;
+        gap: 8px;
+      }
+
       .download-btn {
-        width: 100%;
+        flex: 1;
         background: #1877f2;
         color: white;
         border: none;
         border-radius: 8px;
         padding: 12px 16px;
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 600;
         cursor: pointer;
         transition: background-color 0.2s;
@@ -111,6 +131,14 @@
         background: #e4e6ea;
         color: #bcc0c4;
         cursor: not-allowed;
+      }
+
+      .download-btn-video {
+        background: #6c2bd9;
+      }
+
+      .download-btn-video:hover:not(:disabled) {
+        background: #5a23b8;
       }
 
       .loading {
@@ -159,7 +187,10 @@
 
     <div id="content" style="display: none">
       <div id="images-grid" class="images-grid"></div>
-      <button id="download-btn" class="download-btn">Download All Images</button>
+      <div class="download-buttons">
+        <button id="download-images-btn" class="download-btn" style="display: none">Download Images</button>
+        <button id="download-videos-btn" class="download-btn download-btn-video" style="display: none">Download Videos</button>
+      </div>
     </div>
 
     <script src="popup.js"></script>

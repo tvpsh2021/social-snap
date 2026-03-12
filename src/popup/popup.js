@@ -59,10 +59,19 @@ class StatusDisplay {
     this.contentEl.style.display = 'block';
   }
 
-  updateImageCount(count) {
+  updateImageCount(images) {
     const imageCountEl = document.getElementById('image-count');
     if (imageCountEl) {
-      imageCountEl.textContent = `Found ${count} images`;
+      const videoCount = images.filter(i => i.mediaType === 'video').length;
+      const imageCount = images.length - videoCount;
+
+      if (videoCount > 0 && imageCount > 0) {
+        imageCountEl.textContent = `Found ${imageCount} image(s) and ${videoCount} video(s)`;
+      } else if (videoCount > 0) {
+        imageCountEl.textContent = `Found ${videoCount} video(s)`;
+      } else {
+        imageCountEl.textContent = `Found ${imageCount} image(s)`;
+      }
     }
   }
 }
@@ -71,10 +80,11 @@ class StatusDisplay {
 class ImageGrid {
   constructor() {
     this.imagesGridEl = document.getElementById('images-grid');
-    this.downloadBtnEl = document.getElementById('download-btn');
+    this.downloadImagesBtnEl = document.getElementById('download-images-btn');
+    this.downloadVideosBtnEl = document.getElementById('download-videos-btn');
     this.currentImages = [];
 
-    this._initializeDownloadButton();
+    this._initializeDownloadButtons();
   }
 
   displayImages(images) {
@@ -85,6 +95,11 @@ class ImageGrid {
       const imageItem = this._createImageItem(image, index);
       this.imagesGridEl.appendChild(imageItem);
     });
+
+    const hasImages = images.some(i => i.mediaType !== 'video');
+    const hasVideos = images.some(i => i.mediaType === 'video');
+    this.downloadImagesBtnEl.style.display = hasImages ? '' : 'none';
+    this.downloadVideosBtnEl.style.display = hasVideos ? '' : 'none';
   }
 
   _createImageItem(image, index) {
@@ -92,8 +107,8 @@ class ImageGrid {
     imageItem.className = 'image-item';
 
     const img = document.createElement('img');
-    img.src = image.thumbnailUrl;
-    img.alt = `Image ${index + 1}`;
+    img.src = image.thumbnailUrl || this._getDefaultImageDataUrl();
+    img.alt = `${image.mediaType === 'video' ? 'Video' : 'Image'} ${index + 1}`;
     img.title = image.alt;
     img.crossOrigin = 'anonymous';
 
@@ -104,15 +119,16 @@ class ImageGrid {
     console.log(`Loading thumbnail ${index + 1}:`, image.thumbnailUrl);
 
     img.onerror = () => {
-      console.log(`Thumbnail loading failed ${index + 1}, trying original URL:`, image.thumbnailUrl);
-
-      if (img.src !== image.fullSizeUrl) {
-        img.src = image.fullSizeUrl;
-        return;
-      }
-
+      console.log(`Thumbnail loading failed ${index + 1}:`, image.thumbnailUrl);
       img.src = this._getDefaultImageDataUrl();
     };
+
+    if (image.mediaType === 'video') {
+      const videoBadge = document.createElement('div');
+      videoBadge.className = 'video-badge';
+      videoBadge.textContent = 'VIDEO';
+      imageItem.appendChild(videoBadge);
+    }
 
     imageItem.addEventListener('click', async () => {
       await this._downloadSingleImage(image, index + 1, downloadOverlay);
@@ -147,37 +163,45 @@ class ImageGrid {
     }
   }
 
-  _initializeDownloadButton() {
-    this.downloadBtnEl.addEventListener('click', async () => {
-      if (this.currentImages.length === 0) {
-        return;
-      }
-
-      try {
-        this.downloadBtnEl.disabled = true;
-        this.downloadBtnEl.textContent = 'Downloading...';
-
-        await chrome.runtime.sendMessage({
-          action: BACKGROUND_MESSAGES.DOWNLOAD_IMAGES,
-          images: this.currentImages
-        });
-
-        this._notifyDownloadSuccess();
-
-        setTimeout(() => {
-          this.downloadBtnEl.disabled = false;
-          this.downloadBtnEl.textContent = 'Download All Images';
-        }, 2000);
-      } catch (err) {
-        console.error('Download failed:', err);
-        this.downloadBtnEl.disabled = false;
-        this.downloadBtnEl.textContent = 'Download Failed, Please Retry';
-
-        setTimeout(() => {
-          this.downloadBtnEl.textContent = 'Download All Images';
-        }, 2000);
-      }
+  _initializeDownloadButtons() {
+    this.downloadImagesBtnEl.addEventListener('click', async () => {
+      const images = this.currentImages.filter(i => i.mediaType !== 'video');
+      await this._downloadBatch(images, this.downloadImagesBtnEl, 'Download Images');
     });
+
+    this.downloadVideosBtnEl.addEventListener('click', async () => {
+      const videos = this.currentImages.filter(i => i.mediaType === 'video');
+      await this._downloadBatch(videos, this.downloadVideosBtnEl, 'Download Videos');
+    });
+  }
+
+  async _downloadBatch(items, btn, defaultLabel) {
+    if (items.length === 0) return;
+
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Downloading...';
+
+      await chrome.runtime.sendMessage({
+        action: BACKGROUND_MESSAGES.DOWNLOAD_IMAGES,
+        images: items
+      });
+
+      this._notifyDownloadSuccess();
+
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = defaultLabel;
+      }, 2000);
+    } catch (err) {
+      console.error('Download failed:', err);
+      btn.disabled = false;
+      btn.textContent = 'Failed, Retry';
+
+      setTimeout(() => {
+        btn.textContent = defaultLabel;
+      }, 2000);
+    }
   }
 
   _notifyDownloadSuccess() {
@@ -241,7 +265,7 @@ class PopupController {
 
   _displayImages(images) {
     this.statusDisplay.showContent();
-    this.statusDisplay.updateImageCount(images.length);
+    this.statusDisplay.updateImageCount(images);
     this.imageGrid.displayImages(images);
   }
 

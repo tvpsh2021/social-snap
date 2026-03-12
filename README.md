@@ -83,72 +83,50 @@ When you try to use the extension on unsupported pages, you'll see a helpful err
 
 ## Technical Implementation
 
-### Multi-Platform Architecture
-- **BasePlatform**: Abstract base class for all platforms
-- **ThreadsPlatform**: Specialized extractor for Threads.com
-- **InstagramPlatform**: Specialized extractor for Instagram.com
-- **FacebookPlatform**: Specialized extractor for Facebook.com
-- **XPlatform**: Specialized extractor for X.com
-- **PlatformFactory**: Automatically detects and creates appropriate platform instance
-- **Extensible Design**: Easy to add new platforms
+### Architecture
+The extension uses a **platform-based architecture** where each social media platform has its own detection and extraction logic. All platform handlers are bundled into `content.js` with automatic platform detection based on URL patterns.
+
+**Key Components:**
+- **Content Script** (`content.js`): Platform detection, image extraction, and carousel navigation
+- **Popup** (`popup.js`): User interface, image preview grid, and download triggers
+- **Background Service** (`background.js`): Download management and inter-component messaging
 
 ### Image Detection
-- **Threads.com**:
-  - Uses `<picture>` tags and `alt` attribute patterns (`可能是`)
-  - Smart filtering of comment section images
-  - Position-based detection for main post content
-- **Instagram.com**:
-  - **Smart Carousel Navigation**: Automatically navigates through all images in multi-image posts
-  - Handles Instagram's lazy loading mechanism by programmatically clicking Next button
-  - Detects images in main article containers and carousel/slideshow
-  - Filters out profile pictures and UI elements
-  - Supports all Instagram CDN image formats
-- **X.com**:
-  - **Photo Mode Required**: Only works in photo mode (URLs with `/photo/`)
-  - **Carousel Support**: Automatically navigates through multi-image tweets
-  - Detects images in dialog containers and carousel lists
-  - Handles X.com's dynamic loading of images
-  - Access photo mode by clicking on any image in a tweet
-- **Common Features**:
-  - Parses `srcset` attribute to find highest resolution versions
-  - Preserves Instagram CDN security parameters
+Each platform has specialized extraction logic:
+- **Threads.com**: Uses `<picture>` tags with smart comment filtering
+- **Instagram.com**: Smart carousel navigation with automatic Next button clicking
+- **Facebook.com**: Photo album navigation with automatic resolution detection
+- **X.com**: Photo mode carousel support (requires `/photo/` URL)
+
+**Common features across all platforms:**
+- Parses `srcset` attributes for highest resolution images
+- Preserves CDN security parameters
+- Filters out UI elements and profile pictures
 
 ### Download Mechanism
-- Uses Chrome Downloads API for batch downloading
-- Auto-generates timestamped filenames
-- Smart file extension detection
-- Adds download intervals to avoid server stress
-- Supports Instagram CDN security parameters
+- Uses Chrome Downloads API for batch and single downloads
+- Auto-generates platform-specific timestamped filenames
+- Smart file extension detection from URL
+- Adds intervals between downloads to avoid server stress
 
 ### File Structure
 ```
 social-snap/
-├── manifest.json                    # Extension configuration
-├── src/                            # Source code directory
-│   ├── content/                    # Content Scripts
-│   │   ├── platforms/             # Platform-specific logic
-│   │   │   ├── base-platform.js   # Base platform class
-│   │   │   ├── threads-platform.js # Threads.com handler
-│   │   │   └── instagram-platform.js # Instagram.com handler
-│   │   ├── platform-factory.js    # Platform detection & creation
-│   │   └── content-main.js         # Main content script
-│   ├── popup/                      # Popup UI & Logic
-│   │   ├── components/            # UI Components
-│   │   │   ├── image-grid.js      # Image grid display
-│   │   │   └── status-display.js   # Status messages
-│   │   ├── popup-main.js          # Main popup controller
-│   │   └── popup.html             # Popup interface
-│   ├── background/                 # Background Scripts
-│   │   ├── download-manager.js     # Download handling
-│   │   └── background-main.js      # Main background service
-│   └── shared/                     # Shared Modules
-│       ├── constants.js            # App constants
-│       ├── message-types.js        # Message type definitions
-│       └── utils.js                # Utility functions
-├── assets/                         # Static Assets
-│   ├── icons/                     # Extension icons
-│   └── icon.svg                   # Source icon
-└── README.md                       # Documentation
+├── manifest.json              # Extension configuration (Manifest V3)
+├── src/
+│   ├── content/
+│   │   └── content.js         # Content script - platform detection & image extraction
+│   ├── popup/
+│   │   ├── popup.html         # Popup interface
+│   │   └── popup.js           # Popup controller & UI logic
+│   └── background/
+│       └── background.js      # Background service worker & download manager
+├── assets/
+│   ├── icons/                 # Extension icons (16px, 32px, 48px, 128px)
+│   └── icon.svg               # Source icon
+├── platform-samples/          # Sample HTML files for testing
+├── README.md                  # Documentation
+└── CONTRIBUTING.md            # Development guidelines
 ```
 
 ## Supported Platforms
@@ -243,63 +221,18 @@ This extension is developed using Chrome Extension Manifest V3, with main techno
 - Modern JavaScript (ES6+) with ES Modules
 - Smart image filtering algorithms
 
-### Modular Architecture
-
-The extension follows a clean, modular architecture:
-
-#### **Platform System**
-- **BasePlatform**: Abstract base class defining the interface for all platforms
-- **Platform-specific classes**: Each social media platform has its own handler (ThreadsPlatform, InstagramPlatform)
-- **PlatformFactory**: Automatically detects and instantiates the correct platform handler
-
-#### **Shared Modules**
-- **Constants**: Centralized configuration and selectors
-- **Utils**: Common utility functions used across modules
-- **Message Types**: Standardized communication between extension components
-
-#### **Component Structure**
-- **Content Scripts**: Handle page analysis and image extraction
-- **Popup Components**: Modular UI components for the extension popup
-- **Background Services**: Manage downloads and inter-component communication
 
 ### Adding New Platforms
 
-⚠️ **CRITICAL:** When adding new platform support, the most commonly forgotten step is updating the download filename generation in `src/background/background.js`, resulting in `unknown_xxxxx.jpg` filenames.
+The extension is designed to be extensible. When adding support for a new social media platform:
 
-**Complete New Platform Checklist:**
+**Quick Checklist:**
+1. **Content Script** (`src/content/content.js`): Add platform detection, URL patterns, and extraction logic
+2. **⚠️ Background Script** (`src/background/background.js`): Update filename generation in `downloadAllImages()` and `downloadSingleImage()` methods
+3. **Manifest** (`manifest.json`): Add host permissions and content script URL matches
+4. **Documentation**: Update README.md with new platform information
 
-1. **Content Script (`src/content/content.js`):**
-   - Add platform constants and URL patterns
-   - Create new Platform class extending `BasePlatform`
-   - Update platform detection functions
+**⚠️ Most Commonly Forgotten Step:**
+Updating the platform name detection in `background.js` for filename generation, which results in `unknown_xxxxx.jpg` instead of `platformname_xxxxx.jpg`.
 
-2. **⚠️ Background Script (`src/background/background.js`) - DON'T FORGET:**
-   - Update `downloadAllImages()` method with platform detection
-   - Update `downloadSingleImage()` method with platform detection
-
-3. **Manifest (`manifest.json`):**
-   - Add host permissions and content script matches
-
-4. **Documentation:**
-   - Update README.md and other docs
-
-**Example Background Script Update (Critical Step):**
-```javascript
-// In both downloadAllImages() and downloadSingleImage() methods:
-if (tab.url.includes('threads.com')) {
-  platformName = 'threads';
-} else if (tab.url.includes('instagram.com')) {
-  platformName = 'instagram';
-} else if (tab.url.includes('facebook.com')) {
-  platformName = 'facebook';
-} else if (tab.url.includes('x.com')) {  // ← ADD THIS
-  platformName = 'x';
-}
-```
-
-**Testing Checklist:**
-- ✅ Verify filename starts with correct platform name (not "unknown")
-- ✅ Test image detection and extraction
-- ✅ Test multi-image carousels if applicable
-
-📖 **See [CONTRIBUTING.md](./CONTRIBUTING.md#adding-new-platform-support) for detailed development guidelines.**
+📖 **For detailed step-by-step instructions, see [CONTRIBUTING.md](./CONTRIBUTING.md#adding-new-platform-support).**
