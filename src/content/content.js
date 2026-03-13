@@ -458,7 +458,27 @@ class InstagramPlatform extends BasePlatform {
       return mediaData;
     }
 
-    log('Single image post detected (no <ul> found).');
+    log('Single media post detected (no <ul> found).');
+
+    const singleVideo = mainElement.querySelector('video');
+    if (singleVideo) {
+      log('Single video post detected.');
+      const videoUrl = await this._extractSingleVideoUrl(singleVideo);
+      if (videoUrl) {
+        const thumbnailUrl = singleVideo.closest('[data-instancekey]')?.querySelector('img[referrerpolicy]')?.src || '';
+        return [{
+          index: 1,
+          alt: 'Video',
+          thumbnailUrl,
+          fullSizeUrl: videoUrl,
+          maxWidth: 0,
+          mediaType: 'video'
+        }];
+      }
+      log('Could not extract video URL from single video post.');
+      return [];
+    }
+
     let mainPostImages = this._extractSingleImage(mainElement);
 
     log('filter before:', mainPostImages.length);
@@ -581,7 +601,7 @@ class InstagramPlatform extends BasePlatform {
             try {
               const playPromise = video.play();
               if (playPromise) playPromise.catch(() => {});
-            } catch (e) {
+            } catch {
               // ignore autoplay restrictions
             }
             await wait(800);
@@ -642,6 +662,33 @@ class InstagramPlatform extends BasePlatform {
     log(`Carousel navigation complete. Found ${mediaMap.size} unique media items.`);
 
     return Array.from(mediaMap.values());
+  }
+
+  _findVideoUrlInPerformance() {
+    const entries = performance.getEntriesByType('resource');
+    for (const entry of entries) {
+      if (!entry.name.includes('.mp4')) continue;
+      const isCdnUrl = entry.name.includes('fbcdn.net') || entry.name.includes('cdninstagram.com');
+      if (!isCdnUrl) continue;
+      return this._cleanVideoUrl(entry.name);
+    }
+    return null;
+  }
+
+  async _extractSingleVideoUrl(videoElement) {
+    let videoUrl = this._findVideoUrlInPerformance();
+    if (!videoUrl) {
+      log('Single video: no URL found, triggering load and retrying...');
+      try {
+        const playPromise = videoElement.play();
+        if (playPromise) playPromise.catch(() => {});
+      } catch {
+        // ignore autoplay restrictions
+      }
+      await wait(800);
+      videoUrl = this._findVideoUrlInPerformance();
+    }
+    return videoUrl;
   }
 
   _cleanVideoUrl(url) {
