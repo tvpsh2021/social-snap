@@ -80,6 +80,7 @@ class StatusDisplay {
 class ImageGrid {
   constructor() {
     this.imagesGridEl = document.getElementById('images-grid');
+    this.downloadAllBtnEl = document.getElementById('download-all-btn');
     this.downloadImagesBtnEl = document.getElementById('download-images-btn');
     this.downloadVideosBtnEl = document.getElementById('download-videos-btn');
     this.currentImages = [];
@@ -98,6 +99,7 @@ class ImageGrid {
 
     const hasImages = images.some(i => i.mediaType !== 'video');
     const hasVideos = images.some(i => i.mediaType === 'video');
+    this.downloadAllBtnEl.style.display = images.length > 0 ? '' : 'none';
     this.downloadImagesBtnEl.style.display = hasImages ? '' : 'none';
     this.downloadVideosBtnEl.style.display = hasVideos ? '' : 'none';
   }
@@ -164,6 +166,10 @@ class ImageGrid {
   }
 
   _initializeDownloadButtons() {
+    this.downloadAllBtnEl.addEventListener('click', async () => {
+      await this._downloadBatch(this.currentImages, this.downloadAllBtnEl, 'Download All');
+    });
+
     this.downloadImagesBtnEl.addEventListener('click', async () => {
       const images = this.currentImages.filter(i => i.mediaType !== 'video');
       await this._downloadBatch(images, this.downloadImagesBtnEl, 'Download Images');
@@ -210,7 +216,7 @@ class ImageGrid {
   }
 
   _getDefaultImageDataUrl() {
-    return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiBmaWxsPSIjRjBGMkY1Ii8+CjxwYXRoIGQ9Ik01MCA3NUMzOS4yIDc1IDI4LjkgNzAuNyAyMS4yIDYzQzEzLjUgNTUuMyA5LjIgNDUgOS4yIDM0LjJDOS4yIDIzLjQgMTMuNSAxMy4xIDIxLjIgNS40QzI4LjkgLTIuMyAzOS4yIC02LjYgNTAgLTYuNkM2MC44IC02LjYgNzEuMSAtMi4zIDc4LjggNS40Qzg2LjUgMTMuMSA5MC44IDIzLjQgOTAuOCAzNC4yQzkwLjggNDUgODYuNSA1NS4zIDc4LjggNjNDNzEuMSA3MC43IDYwLjggNzUgNTAgNzVaTTUwIDY3QzU4LjMgNjcgNjYuMiA2My44IDcyIDU4Qzc3LjggNTIuMiA4MSA0NC4zIDgxIDM2QzgxIDI3LjcgNzcuOCAxOS44IDcyIDE0QzY2LjIgOC4yIDU4LjMgNSA1MCA1QzQxLjcgNSAzMy44IDguMiAyOCAxNEMyMi4yIDE5LjggMTkgMjcuNyAxOSAzNkMxOSA0NC4zIDIyLjIgNTIuMiAyOCA1OEMzMy44IDYzLjggNDEuNyA2NyA1MCA2N1oiIGZpbGw9IiNDQ0QyRDkiLz4KPHBhdGggZD0iTTQzIDU1SDU3VjQxSDQzVjU1Wk00MyA2M0g1N1Y1NUg0M1Y2M1pNNDMgNTVINDNWMjlINTdWNDFINDNWNTVaIiBmaWxsPSIjQ0NEMkQ5Ii8+Cjx0ZXh0IHg9IjUwIiB5PSIyNSIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTAiIGZpbGw9IiNDQ0QyRDkiIHRleHQtYW5jaG9yPSJtaWRkbGUiPuWcluePjzwvdGV4dD4KPC9zdmc+';
+    return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNGMEYyRjUiLz48dGV4dCB4PSI1MCIgeT0iNTQiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjEwIiBmaWxsPSIjOUJBNUIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5ObyBwcmV2aWV3PC90ZXh0Pjwvc3ZnPg==';
   }
 }
 

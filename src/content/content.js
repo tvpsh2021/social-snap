@@ -431,35 +431,50 @@ class InstagramPlatform extends BasePlatform {
       return [];
     }
 
-    // Use the presence of a <ul> element to determine if it's a carousel
     const isCarousel = !!mainElement.querySelector(SELECTORS.INSTAGRAM.CAROUSEL_INDICATOR);
-    let mainPostImages = [];
 
     if (isCarousel) {
       log('Carousel post detected (<ul> found).');
-      mainPostImages = await this._navigateCarousel(mainElement);
+      const postMedia = await this._navigateCarousel(mainElement);
 
+      const mediaData = [];
+      postMedia.forEach((item, index) => {
+        if (!item) return;
+        if (item.mediaType === 'video') {
+          mediaData.push({
+            index: index + 1,
+            alt: 'Video',
+            thumbnailUrl: item.thumbnailUrl || '',
+            fullSizeUrl: item.src,
+            maxWidth: 0,
+            mediaType: 'video'
+          });
+        } else if (item.src) {
+          mediaData.push(this.createImageData(item, index));
+        }
+      });
 
-    } else {
-      log('Single image post detected (no <ul> found).');
-      mainPostImages = this._extractSingleImage(mainElement);
-
-      log('filter before:', mainPostImages.length);
-      log(mainPostImages);
-
-      // Apply boundary filter AFTER collecting all images
-      const boundaryElement = this._findBoundaryElement();
-      if (boundaryElement) {
-        log('Applying boundary filter.');
-        mainPostImages = mainPostImages.filter(img => {
-          if (!img || !img.isConnected) return false;
-          const position = boundaryElement.compareDocumentPosition(img);
-          return position & Node.DOCUMENT_POSITION_PRECEDING;
-        });
-      }
-
-      log(`Final selected Instagram post image count: ${mainPostImages.length}`);
+      log('Extracted Instagram carousel media information:', mediaData);
+      return mediaData;
     }
+
+    log('Single image post detected (no <ul> found).');
+    let mainPostImages = this._extractSingleImage(mainElement);
+
+    log('filter before:', mainPostImages.length);
+    log(mainPostImages);
+
+    const boundaryElement = this._findBoundaryElement();
+    if (boundaryElement) {
+      log('Applying boundary filter.');
+      mainPostImages = mainPostImages.filter(img => {
+        if (!img || !img.isConnected) return false;
+        const position = boundaryElement.compareDocumentPosition(img);
+        return position & Node.DOCUMENT_POSITION_PRECEDING;
+      });
+    }
+
+    log(`Final selected Instagram post image count: ${mainPostImages.length}`);
 
     const imageData = [];
     mainPostImages.forEach((img, index) => {
@@ -493,7 +508,10 @@ class InstagramPlatform extends BasePlatform {
 
   async _navigateCarousel(container) {
     log('Starting carousel navigation with user-defined rule-based logic and fixed wait...');
-    const imageMap = new Map();
+    const mediaMap = new Map();
+    const collectedVideoUrls = new Set();
+    const collectedVideoAssetIds = new Set();
+    const processedVideoBlobUrls = new Set();
     let navigationCount = 0;
 
     const getTranslateXFromString = (element) => {
@@ -506,8 +524,39 @@ class InstagramPlatform extends BasePlatform {
       return null;
     };
 
-    const collectCurrentlyVisibleImage = () => {
-      const ul =  container.querySelector(SELECTORS.INSTAGRAM.UL_ELEMENT);
+    const getVideoMeta = (url) => {
+      try {
+        const efg = new URL(url).searchParams.get('efg');
+        if (!efg) return null;
+        // efg uses URL-safe base64 (- and _ instead of + and /)
+        const standardBase64 = efg.replace(/-/g, '+').replace(/_/g, '/');
+        const decoded = JSON.parse(atob(standardBase64));
+        return {
+          assetId: decoded.xpv_asset_id ? String(decoded.xpv_asset_id) : null,
+          isCarouselItem: typeof decoded.vencodeTag === 'string' && decoded.vencodeTag.includes('carousel_item')
+        };
+      } catch {
+        return null;
+      }
+    };
+
+    const getNewVideoUrl = () => {
+      const entries = performance.getEntriesByType('resource');
+      for (const entry of entries) {
+        if (!entry.name.includes('.mp4')) continue;
+        const isCdnUrl = entry.name.includes('fbcdn.net') || entry.name.includes('cdninstagram.com');
+        if (!isCdnUrl) continue;
+        const cleanUrl = this._cleanVideoUrl(entry.name);
+        if (collectedVideoUrls.has(cleanUrl)) continue;
+        const meta = getVideoMeta(entry.name);
+        if (meta?.assetId && collectedVideoAssetIds.has(meta.assetId)) continue;
+        return cleanUrl;
+      }
+      return null;
+    };
+
+    const collectCurrentlyVisibleMedia = async () => {
+      const ul = container.querySelector(SELECTORS.INSTAGRAM.UL_ELEMENT);
       if (!ul) return;
 
       const listItems = Array.from(ul.children).filter(li => li instanceof HTMLLIElement);
@@ -517,12 +566,49 @@ class InstagramPlatform extends BasePlatform {
 
       const zeroPxLi = listItems.find(li => getTranslateXFromString(li) === 0);
 
-      const insertImage = (_visibleLi) => {
+      const insertMediaFromLi = async (_visibleLi) => {
+        const video = _visibleLi.querySelector('video');
+        if (video) {
+          if (video.src && processedVideoBlobUrls.has(video.src)) {
+            log('Video element already processed, skipping');
+            return;
+          }
+          if (video.src) processedVideoBlobUrls.add(video.src);
+
+          let videoUrl = getNewVideoUrl();
+          if (!videoUrl) {
+            log('Video detected but no URL found, triggering load and retrying...');
+            try {
+              const playPromise = video.play();
+              if (playPromise) playPromise.catch(() => {});
+            } catch (e) {
+              // ignore autoplay restrictions
+            }
+            await wait(800);
+            videoUrl = getNewVideoUrl();
+          }
+
+          if (videoUrl) {
+            collectedVideoUrls.add(videoUrl);
+            const meta = getVideoMeta(videoUrl);
+            if (meta?.assetId) collectedVideoAssetIds.add(meta.assetId);
+            if (!mediaMap.has(videoUrl)) {
+              const thumbnailImg = _visibleLi.querySelector('img[referrerpolicy]');
+              const thumbnailUrl = thumbnailImg?.src || '';
+              log(`Found new video via performance API. Total: ${mediaMap.size + 1}`);
+              mediaMap.set(videoUrl, { mediaType: 'video', src: videoUrl, thumbnailUrl });
+            }
+          } else {
+            log('Video detected but no new video URL found in performance entries');
+          }
+          return;
+        }
+
         const img = _visibleLi.querySelector(SELECTORS.INSTAGRAM.POST_IMAGES);
         if (img && img.src) {
-          if (!imageMap.has(img.src)) {
-            log(`Found new visible image via rules. Total: ${imageMap.size + 1}`);
-            imageMap.set(img.src, img);
+          if (!mediaMap.has(img.src)) {
+            log(`Found new image. Total: ${mediaMap.size + 1}`);
+            mediaMap.set(img.src, img);
           }
         }
       };
@@ -530,15 +616,15 @@ class InstagramPlatform extends BasePlatform {
       // first image
       if (zeroPxLi && listItems.length === 3) {
         log('Rule matched: Found li with translateX(0px). and li=3');
-        insertImage(listItems[1]);
+        await insertMediaFromLi(listItems[1]);
       }
 
-      insertImage(listItems[2]);
+      await insertMediaFromLi(listItems[2]);
     };
 
     while (navigationCount < CAROUSEL.INSTAGRAM.MAX_ATTEMPTS) {
       log('navigationCount: ', navigationCount);
-      collectCurrentlyVisibleImage();
+      await collectCurrentlyVisibleMedia();
 
       const nextButton = this._findNextButton(container);
       if (!nextButton) {
@@ -553,9 +639,20 @@ class InstagramPlatform extends BasePlatform {
       await wait(CAROUSEL.INSTAGRAM.WAIT_TIME);
     }
 
-    log(`Carousel navigation complete. Found ${imageMap.size} unique images.`);
+    log(`Carousel navigation complete. Found ${mediaMap.size} unique media items.`);
 
-    return Array.from(imageMap.values());
+    return Array.from(mediaMap.values());
+  }
+
+  _cleanVideoUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      urlObj.searchParams.delete('bytestart');
+      urlObj.searchParams.delete('byteend');
+      return urlObj.toString();
+    } catch {
+      return url;
+    }
   }
 
   _findNextButton(container) {

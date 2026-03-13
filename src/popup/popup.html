@@ -106,12 +106,16 @@
       }
 
       .download-buttons {
-        display: flex;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 8px;
       }
 
+      .download-btn-all {
+        grid-column: 1 / -1;
+      }
+
       .download-btn {
-        flex: 1;
         background: #1877f2;
         color: white;
         border: none;
@@ -188,6 +192,7 @@
     <div id="content" style="display: none">
       <div id="images-grid" class="images-grid"></div>
       <div class="download-buttons">
+        <button id="download-all-btn" class="download-btn download-btn-all" style="display: none">Download All</button>
         <button id="download-images-btn" class="download-btn" style="display: none">Download Images</button>
         <button id="download-videos-btn" class="download-btn download-btn-video" style="display: none">Download Videos</button>
       </div>
