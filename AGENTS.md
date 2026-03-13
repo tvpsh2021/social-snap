@@ -38,3 +38,10 @@ manifest.json   # Chrome Extension manifest
 - The content script (`content.js`) is responsible for scraping media URLs from the DOM.
 - The background service worker (`background.js`) handles download orchestration via `chrome.downloads`.
 - The popup (`popup/`) presents the UI and coordinates between the content script and background worker via `chrome.tabs.sendMessage` / `chrome.runtime.sendMessage`.
+
+## Documentation Maintenance
+
+When making changes to extraction logic in `content.js`, always check whether the following files need to be updated:
+
+- `docs/` - platform-specific extraction logic documentation (e.g., `docs/instagram-extraction.md`, `docs/threads-extraction.md`)
+- `README.md` - user-facing feature descriptions and supported platforms
