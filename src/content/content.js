@@ -286,6 +286,12 @@ class BasePlatform {
       if (maxWidth === 0) {
         maxSizeUrl = src;
       }
+    } else if (src.includes('twimg.com')) {
+      // Twitter/X CDN uses 'name' param to control size (thumb, small, medium, large, 4096x4096)
+      thumbnailUrl = src.replace(/([?&]name=)[^&]+/, '$1small');
+      if (maxWidth === 0) {
+        maxSizeUrl = src.replace(/([?&]name=)[^&]+/, '$14096x4096');
+      }
     } else {
       // Non-Instagram images, can safely modify size parameters
       if (thumbnailUrl.includes('?')) {
