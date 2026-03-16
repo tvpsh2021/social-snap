@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social Snap",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Social Snap - Download all images from Threads.com, Instagram.com, Facebook.com and X.com posts with a single click",
   "permissions": [
     "activeTab",
@@ -46,7 +46,9 @@
         "https://www.facebook.com/*/photos/*",
         "https://x.com/*/status/*"
       ],
-      "js": ["src/content/content.js"]
+      "js": [
+        "src/content/content.js"
+      ]
     }
   ],
   "background": {

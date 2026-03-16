@@ -45,3 +45,12 @@ When making changes to extraction logic in `content.js`, always check whether th
 
 - `docs/` - platform-specific extraction logic documentation (e.g., `docs/instagram-extraction.md`, `docs/threads-extraction.md`)
 - `README.md` - user-facing feature descriptions and supported platforms
+
+## Design System
+
+The UI design is governed by `docs/design-system.md`. Before making any changes to `src/popup/`:
+
+- Read `docs/design-system.md` to understand the color palette, typography, component rules, and what to avoid.
+- All colors must use the CSS custom properties defined in the popup (e.g., `--color-text-primary`, `--color-surf-1`). Do not hardcode hex values.
+- If new UI states or components are added, update `docs/design-system.md` in the same task.
+- The live UI reference is `design/ui-demo.html`. The icon generator is `design/icon-generator.html`.

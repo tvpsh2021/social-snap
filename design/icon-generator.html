@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Social Snap — Icon Generator v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@700&family=DM+Sans:opsz,wght@9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #090f1e;
+      --surf-1: #192a51;
+      --surf-2: #1f3264;
+      --border: rgba(170,161,200,0.1);
+      --t1: #f5e6e8;
+      --t2: #d5c6e0;
+      --t3: #aaa1c8;
+      --t4: #967aa1;
+    }
+
+    body {
+      background: var(--bg);
+      font-family: 'DM Sans', sans-serif;
+      color: var(--t2);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 52px 24px 80px;
+      gap: 40px;
+    }
+
+    .page-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--t1);
+      letter-spacing: -0.4px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--t4);
+      margin-top: 6px;
+    }
+
+    .card {
+      background: #0e1729;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 680px;
+    }
+
+    /* ── Preview grid ── */
+    .preview-grid {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+
+    .preview-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .preview-item canvas {
+      display: block;
+      /* checkerboard background for transparency */
+      background-image:
+        linear-gradient(45deg, #1a2040 25%, transparent 25%),
+        linear-gradient(-45deg, #1a2040 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #1a2040 75%),
+        linear-gradient(-45deg, transparent 75%, #1a2040 75%);
+      background-size: 10px 10px;
+      background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+      border-radius: 4px;
+    }
+
+    .preview-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--t4);
+      letter-spacing: 0.3px;
+    }
+
+    .preview-desc {
+      font-size: 10px;
+      color: rgba(150,122,161,0.6);
+    }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 28px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-generate {
+      background: var(--surf-1);
+      color: var(--t2);
+      border-color: rgba(170,161,200,0.2);
+    }
+    .btn-generate:hover {
+      background: var(--surf-2);
+      color: var(--t1);
+    }
+
+    .btn-dl {
+      background: rgba(25,42,81,0.5);
+      color: var(--t3);
+      font-size: 12px;
+      padding: 8px 14px;
+    }
+    .btn-dl:hover {
+      background: var(--surf-1);
+      color: var(--t2);
+      border-color: rgba(170,161,200,0.2);
+    }
+
+    .dl-row {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    /* ── Instructions ── */
+    .instructions {
+      background: var(--surf-1);
+      border: 1px solid rgba(170,161,200,0.1);
+      border-radius: 12px;
+      padding: 20px 24px;
+      max-width: 680px;
+      width: 100%;
+    }
+    .instructions h3 {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--t3);
+      margin-bottom: 14px;
+    }
+    .step {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .step:last-child { margin-bottom: 0; }
+    .step-num {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: rgba(170,161,200,0.1);
+      border: 1px solid rgba(170,161,200,0.15);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700;
+      color: var(--t3);
+      flex-shrink: 0;
+    }
+    .step-text {
+      font-size: 13px;
+      color: var(--t4);
+      line-height: 1.5;
+      padding-top: 1px;
+    }
+    .step-text code {
+      background: rgba(170,161,200,0.08);
+      border: 1px solid rgba(170,161,200,0.12);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: var(--t3);
+    }
+
+    /* ── Design notes ── */
+    .palette-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .swatch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .swatch-dot {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .swatch-label {
+      font-size: 9px;
+      color: var(--t4);
+      letter-spacing: 0.3px;
+    }
+  </style>
+</head>
+<body>
+
+  <div style="text-align:center;">
+    <h1 class="page-title">Social Snap — Icon Generator</h1>
+    <p class="subtitle">v2  ·  Night palette</p>
+  </div>
+
+  <div class="card">
+    <div class="preview-grid" id="preview-grid">
+      <div class="preview-item">
+        <canvas id="c128" width="128" height="128"></canvas>
+        <span class="preview-label">128 × 128</span>
+        <span class="preview-desc">Chrome Web Store</span>
+      </div>
+      <div class="preview-item">
+        <canvas id="c48" width="48" height="48"></canvas>
+        <span class="preview-label">48 × 48</span>
+        <span class="preview-desc">Extension Management</span>
+      </div>
+      <div class="preview-item">
+        <canvas id="c32" width="32" height="32"></canvas>
+        <span class="preview-label">32 × 32</span>
+        <span class="preview-desc">Extension Menu</span>
+      </div>
+      <div class="preview-item">
+        <canvas id="c16" width="16" height="16"></canvas>
+        <span class="preview-label">16 × 16</span>
+        <span class="preview-desc">Toolbar</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-generate" id="btn-generate">Generate All Icons</button>
+    </div>
+
+    <div class="dl-row">
+      <button class="btn btn-dl" id="dl-128">↓ icon128.png</button>
+      <button class="btn btn-dl" id="dl-48">↓ icon48.png</button>
+      <button class="btn btn-dl" id="dl-32">↓ icon32.png</button>
+      <button class="btn btn-dl" id="dl-16">↓ icon16.png</button>
+    </div>
+  </div>
+
+  <div class="instructions">
+    <h3>How to use</h3>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">Click <strong style="color: var(--t2)">Generate All Icons</strong> above, then download each size.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">Save to <code>assets/icons/</code> replacing the existing files: <code>icon16.png</code>, <code>icon32.png</code>, <code>icon48.png</code>, <code>icon128.png</code>.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">Go to <code>chrome://extensions</code>, enable Developer Mode, and click <strong style="color: var(--t2)">Reload</strong> on Social Snap.</div>
+    </div>
+
+    <div class="palette-row">
+      <div class="swatch"><div class="swatch-dot" style="background:#090f1e"></div><span class="swatch-label">BG</span></div>
+      <div class="swatch"><div class="swatch-dot" style="background:#192a51"></div><span class="swatch-label">Indigo</span></div>
+      <div class="swatch"><div class="swatch-dot" style="background:#2d1c4e"></div><span class="swatch-label">Plum</span></div>
+      <div class="swatch"><div class="swatch-dot" style="background:#aaa1c8"></div><span class="swatch-label">Lilac</span></div>
+      <div class="swatch"><div class="swatch-dot" style="background:#f5e6e8"></div><span class="swatch-label">Blush</span></div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * Draw the Social Snap icon at any size.
+     *
+     * Design concept:
+     *   - Rounded-square background: gradient Space Indigo → deep Plum
+     *   - Viewfinder corners (L-shapes) in Lilac — "framing" a capture
+     *   - Central download arrow in Lavender Blush — the primary action
+     *   - At 16px: simplified (no corner arms, just arrow)
+     */
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+
+      const s = size;
+
+      // ── Background: rounded rect ──────────────────
+      const radius = s * 0.22;
+      roundRect(ctx, 0, 0, s, s, radius);
+
+      const bg = ctx.createLinearGradient(0, 0, s, s);
+      bg.addColorStop(0, '#192a51');
+      bg.addColorStop(1, '#2d1c4e');
+      ctx.fillStyle = bg;
+      ctx.fill();
+
+      // subtle inner highlight on top edge
+      roundRect(ctx, 0, 0, s, s, radius);
+      const shine = ctx.createLinearGradient(0, 0, 0, s * 0.4);
+      shine.addColorStop(0, 'rgba(245,230,232,0.07)');
+      shine.addColorStop(1, 'rgba(245,230,232,0)');
+      ctx.fillStyle = shine;
+      ctx.fill();
+
+      // ── Viewfinder corners (skip at 16px) ─────────
+      if (s >= 24) {
+        const margin = s * 0.19;
+        const arm    = s * 0.17;
+        const lw     = Math.max(s * 0.065, 1.2);
+
+        ctx.strokeStyle = '#aaa1c8';
+        ctx.lineWidth = lw;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        corner(ctx, margin,     margin,     arm,  1,  1);
+        corner(ctx, s - margin, margin,     arm, -1,  1);
+        corner(ctx, margin,     s - margin, arm,  1, -1);
+        corner(ctx, s - margin, s - margin, arm, -1, -1);
+      }
+
+      // ── Download arrow ────────────────────────────
+      const cx     = s * 0.5;
+      const top    = s >= 32 ? s * 0.285 : s * 0.22;
+      const bot    = s >= 32 ? s * 0.66  : s * 0.72;
+      const hw     = s >= 32 ? s * 0.135 : s * 0.2;
+      const lw2    = Math.max(s * 0.075, 1.2);
+
+      ctx.strokeStyle = '#f5e6e8';
+      ctx.lineWidth = lw2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // shaft
+      ctx.beginPath();
+      ctx.moveTo(cx, top);
+      ctx.lineTo(cx, bot);
+      ctx.stroke();
+
+      // arrowhead
+      ctx.beginPath();
+      ctx.moveTo(cx - hw, bot - hw * 0.9);
+      ctx.lineTo(cx, bot);
+      ctx.lineTo(cx + hw, bot - hw * 0.9);
+      ctx.stroke();
+
+    }
+
+    // ── helpers ──────────────────────────────────────
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function corner(ctx, x, y, len, dx, dy) {
+      ctx.beginPath();
+      ctx.moveTo(x + dx * len, y);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x, y + dy * len);
+      ctx.stroke();
+    }
+
+    function generateAll() {
+      const sizes = [128, 48, 32, 16];
+      sizes.forEach(s => {
+        const ctx = document.getElementById('c' + s).getContext('2d');
+        ctx.clearRect(0, 0, s, s);
+      });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        sizes.forEach(s => drawIcon(document.getElementById('c' + s), s));
+      }));
+    }
+
+    function dl(canvasId, filename) {
+      const c = document.getElementById(canvasId);
+      const a = document.createElement('a');
+      a.download = filename;
+      a.href = c.toDataURL('image/png');
+      a.click();
+    }
+
+    window.addEventListener('load', () => {
+      generateAll();
+
+      const genBtn = document.getElementById('btn-generate');
+      genBtn.addEventListener('click', () => {
+        try {
+          generateAll();
+          genBtn.textContent = 'Generated!';
+          genBtn.style.background = '#1f3264';
+          genBtn.style.color = '#f5e6e8';
+        } catch (err) {
+          genBtn.textContent = 'Error: ' + err.message;
+          genBtn.style.color = '#d47070';
+          console.error('generateAll failed:', err);
+        }
+        setTimeout(() => {
+          genBtn.textContent = 'Generate All Icons';
+          genBtn.style.background = '';
+          genBtn.style.color = '';
+        }, 4000);
+      });
+
+      document.getElementById('dl-128').addEventListener('click', () => dl('c128', 'icon128.png'));
+      document.getElementById('dl-48').addEventListener('click',  () => dl('c48',  'icon48.png'));
+      document.getElementById('dl-32').addEventListener('click',  () => dl('c32',  'icon32.png'));
+      document.getElementById('dl-16').addEventListener('click',  () => dl('c16',  'icon16.png'));
+    });
+  </script>
+</body>
+</html>

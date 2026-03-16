@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Social Snap — v3 Design</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Palette ──────────────────────────────────
+       Lavender Blush  #f5e6e8   primary text
+       Thistle         #d5c6e0   secondary text
+       Lilac           #aaa1c8   muted / accent
+       Dusty Mauve     #967aa1   very muted
+       Space Indigo    #192a51   surface
+    ──────────────────────────────────────────── */
+    :root {
+      --bg:        #090f1e;
+      --surf-0:    #0e1729;
+      --surf-1:    #192a51;
+      --surf-2:    #1f3264;
+      --border:    rgba(170,161,200,0.09);
+      --border-hi: rgba(213,198,224,0.18);
+      --t1: #f5e6e8;
+      --t2: #d5c6e0;
+      --t3: #aaa1c8;
+      --t4: #967aa1;
+      --accent:    #aaa1c8;
+      --accent-hi: #d5c6e0;
+    }
+
+    body {
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px 80px;
+      gap: 28px;
+      min-height: 100vh;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .demo-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: var(--t4);
+    }
+
+    .demo-tabs {
+      display: flex;
+      gap: 3px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+    }
+    .demo-tab {
+      padding: 5px 14px;
+      border-radius: 7px;
+      border: none;
+      background: transparent;
+      color: var(--t4);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .demo-tab:hover { color: var(--t2); }
+    .demo-tab.active {
+      background: var(--surf-1);
+      color: var(--t2);
+    }
+
+    /* ─────────────────────────────────
+       POPUP SHELL
+    ───────────────────────────────── */
+    .popup {
+      width: 400px;
+      background: var(--surf-0);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.02) inset,
+        0 40px 100px rgba(0,0,0,0.7),
+        0 8px 24px rgba(9,15,30,0.8);
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* top-edge shimmer */
+    .popup::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 15%; right: 15%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(170,161,200,0.35), transparent);
+      pointer-events: none;
+    }
+
+    /* ─────────────────────────────────
+       HEADER
+    ───────────────────────────────── */
+    .popup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 14px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .app-icon {
+      width: 22px;
+      height: 22px;
+      background: linear-gradient(145deg, #192a51, #2d1c4e);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(170,161,200,0.2);
+      box-shadow: 0 2px 8px rgba(9,15,30,0.6);
+      flex-shrink: 0;
+    }
+
+    .app-name {
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--t1);
+      letter-spacing: -0.3px;
+    }
+
+    .count-pill {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--t4);
+      background: var(--surf-1);
+      border: 1px solid var(--border);
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.1px;
+      transition: all 0.3s ease;
+    }
+    .count-pill.active {
+      color: var(--t3);
+      background: rgba(170,161,200,0.1);
+      border-color: rgba(170,161,200,0.2);
+    }
+
+    /* ─────────────────────────────────
+       MEDIA GRID
+    ───────────────────────────────── */
+    .popup-body { padding: 10px; }
+
+    .media-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+    }
+
+    .media-item {
+      aspect-ratio: 1;
+      border-radius: 9px;
+      overflow: hidden;
+      position: relative;
+      cursor: pointer;
+      background: var(--surf-1);
+      --i: 0;
+      animation: itemReveal 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+      animation-delay: calc(var(--i) * 50ms);
+    }
+
+    @keyframes itemReveal {
+      from { opacity: 0; transform: scale(0.84) translateY(4px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .media-item img {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .media-item:hover img { transform: scale(1.08); }
+
+    .item-overlay {
+      position: absolute; inset: 0;
+      background: rgba(9,15,30,0.6);
+      opacity: 0;
+      transition: opacity 0.18s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .media-item:hover .item-overlay { opacity: 1; }
+
+    .dl-circle {
+      width: 34px; height: 34px;
+      background: rgba(245,230,232,0.92);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: scale(0.6);
+      opacity: 0;
+      transition:
+        transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity 0.2s ease;
+    }
+    .media-item:hover .dl-circle { transform: scale(1); opacity: 1; }
+
+    /* selected */
+    .media-item.selected .item-overlay {
+      opacity: 1;
+      background: rgba(25,42,81,0.5);
+    }
+    .media-item.selected::after {
+      content: '';
+      position: absolute; inset: 0;
+      border: 2px solid rgba(170,161,200,0.75);
+      border-radius: 9px;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .media-item.selected .dl-circle {
+      transform: scale(1); opacity: 1;
+      background: var(--surf-2);
+      border: 1px solid rgba(170,161,200,0.3);
+    }
+
+    .video-badge {
+      position: absolute;
+      top: 6px; left: 6px;
+      background: rgba(9,15,30,0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: var(--t3);
+      font-size: 8px; font-weight: 700;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      padding: 3px 7px;
+      border-radius: 5px;
+      border: 1px solid rgba(170,161,200,0.12);
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* ─────────────────────────────────
+       FOOTER / BUTTONS
+    ───────────────────────────────── */
+    .popup-footer {
+      padding: 8px 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 11px 16px;
+      letter-spacing: -0.1px;
+      transition: all 0.15s;
+    }
+    .btn:active:not(:disabled) { transform: scale(0.975); }
+
+    /* Primary: Lilac pill */
+    .btn-primary {
+      width: 100%;
+      background: var(--surf-1);
+      color: var(--t2);
+      border: 1px solid rgba(170,161,200,0.22);
+      box-shadow: 0 1px 0 rgba(245,230,232,0.05) inset;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--surf-2);
+      color: var(--t1);
+      border-color: rgba(213,198,224,0.3);
+    }
+    .btn-primary:disabled {
+      background: rgba(25,42,81,0.4);
+      color: rgba(150,122,161,0.3);
+      border-color: transparent;
+      cursor: not-allowed;
+    }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+    }
+
+    .btn-ghost {
+      background: rgba(25,42,81,0.5);
+      border: 1px solid var(--border);
+      color: var(--t4);
+    }
+    .btn-ghost:hover:not(:disabled) {
+      background: var(--surf-1);
+      color: var(--t3);
+      border-color: var(--border-hi);
+    }
+    .btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-ghost-mauve {
+      background: rgba(25,42,81,0.5);
+      border: 1px solid rgba(150,122,161,0.2);
+      color: var(--t3);
+    }
+    .btn-ghost-mauve:hover:not(:disabled) {
+      background: rgba(150,122,161,0.1);
+      border-color: rgba(150,122,161,0.35);
+      color: var(--t2);
+    }
+    .btn-ghost-mauve:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ─────────────────────────────────
+       LOADING
+    ───────────────────────────────── */
+    .skel-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+      padding: 10px 10px 0;
+    }
+    .skel {
+      aspect-ratio: 1;
+      border-radius: 9px;
+      background: linear-gradient(90deg, var(--surf-1) 25%, var(--surf-2) 50%, var(--surf-1) 75%);
+      background-size: 300% 100%;
+      animation: shimmer 1.8s ease-in-out infinite;
+    }
+    .skel:nth-child(2) { animation-delay: 0.12s; }
+    .skel:nth-child(3) { animation-delay: 0.24s; }
+    .skel:nth-child(4) { animation-delay: 0.18s; }
+    .skel:nth-child(5) { animation-delay: 0.3s; }
+    .skel:nth-child(6) { animation-delay: 0.06s; }
+
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .loading-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 18px 16px 24px;
+    }
+    .spin-ring {
+      width: 15px; height: 15px;
+      border: 1.8px solid rgba(170,161,200,0.15);
+      border-top-color: var(--t3);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--t4);
+      letter-spacing: 0.1px;
+    }
+
+    /* ─────────────────────────────────
+       MESSAGE STATES
+    ───────────────────────────────── */
+    .state-message {
+      padding: 32px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-align: center;
+    }
+
+    .msg-icon {
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .msg-icon.error {
+      background: rgba(200,80,80,0.08);
+      border: 1px solid rgba(200,80,80,0.18);
+    }
+    .msg-icon.success {
+      background: rgba(100,180,140,0.08);
+      border: 1px solid rgba(100,180,140,0.2);
+      animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+    @keyframes popIn {
+      from { transform: scale(0.5); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
+
+    .msg-title { font-size: 13px; font-weight: 600; color: var(--t1); letter-spacing: -0.1px; }
+    .msg-body  { font-size: 12px; color: var(--t4); line-height: 1.6; max-width: 240px; }
+
+    /* ─────────────────────────────────
+       VISIBILITY
+    ───────────────────────────────── */
+    .view { display: none; }
+    .view.active { display: block; }
+  </style>
+</head>
+<body>
+
+  <span class="demo-label">Social Snap — v3  ·  Night Palette</span>
+
+  <div class="demo-tabs">
+    <button class="demo-tab active" onclick="switchView('media', this)">Media</button>
+    <button class="demo-tab" onclick="switchView('loading', this)">Loading</button>
+    <button class="demo-tab" onclick="switchView('error', this)">Error</button>
+    <button class="demo-tab" onclick="switchView('success', this)">Success</button>
+  </div>
+
+  <div class="popup">
+
+    <!-- Header -->
+    <div class="popup-header">
+      <div class="header-left">
+        <div class="app-icon">
+          <!-- viewfinder corners + arrow mark -->
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M1 4V1h3" stroke="#aaa1c8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 4V1H9" stroke="#aaa1c8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M1 9v3h3" stroke="#aaa1c8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 9v3H9" stroke="#aaa1c8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M6.5 3.5v4m0 0L5 6m1.5 1.5L8 6" stroke="#f5e6e8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="app-name">Social Snap</span>
+      </div>
+      <span class="count-pill active" id="count-pill">6 items</span>
+    </div>
+
+    <!-- View: Media -->
+    <div class="view active" id="view-media">
+      <div class="popup-body">
+        <div class="media-grid" id="media-grid"></div>
+      </div>
+      <div class="popup-footer">
+        <button class="btn btn-primary">Download All  ·  6</button>
+        <div class="btn-row">
+          <button class="btn btn-ghost">Images  ·  5</button>
+          <button class="btn btn-ghost-mauve">Videos  ·  1</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- View: Loading -->
+    <div class="view" id="view-loading">
+      <div class="skel-grid">
+        <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+        <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+      </div>
+      <div class="loading-row">
+        <div class="spin-ring"></div>
+        <span class="loading-text">Scanning for media...</span>
+      </div>
+    </div>
+
+    <!-- View: Error -->
+    <div class="view" id="view-error">
+      <div class="state-message">
+        <div class="msg-icon error">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M9 6.5v4M9 12.5v.5" stroke="#d47070" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M7.55 2.83L1.39 13.5A1.65 1.65 0 002.83 16h12.34a1.65 1.65 0 001.44-2.5L10.45 2.83a1.65 1.65 0 00-2.9 0z" stroke="#d47070" stroke-width="1.4" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="msg-title">No media found</span>
+        <span class="msg-body">Open a specific post on Instagram, Threads, Facebook, or X to get started.</span>
+      </div>
+    </div>
+
+    <!-- View: Success -->
+    <div class="view" id="view-success">
+      <div class="state-message">
+        <div class="msg-icon success">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M3.5 9.5L7.5 13.5L14.5 5" stroke="#70c4a0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <span class="msg-title">Download started</span>
+        <span class="msg-body">Check your downloads folder.</span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const items = [
+      { seed: 'np11', type: 'image' },
+      { seed: 'np22', type: 'image' },
+      { seed: 'np33', type: 'video' },
+      { seed: 'np44', type: 'image' },
+      { seed: 'np55', type: 'image' },
+      { seed: 'np66', type: 'image' },
+    ];
+
+    const dlSVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M8 2v8m0 0L5.5 7.5M8 10l2.5-2.5M2.5 13.5h11" stroke="#192a51" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+
+    const checkSVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M3 8.5l3.5 3.5 6.5-8" stroke="#d5c6e0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+
+    const grid = document.getElementById('media-grid');
+
+    items.forEach((item, i) => {
+      const el = document.createElement('div');
+      el.className = 'media-item';
+      el.style.setProperty('--i', i);
+      el.innerHTML = `
+        ${item.type === 'video' ? '<span class="video-badge">Video</span>' : ''}
+        <img src="https://picsum.photos/seed/${item.seed}/220/220" alt="">
+        <div class="item-overlay">
+          <div class="dl-circle">${dlSVG}</div>
+        </div>
+      `;
+      el.addEventListener('click', () => {
+        const sel = el.classList.toggle('selected');
+        el.querySelector('.dl-circle').innerHTML = sel ? checkSVG : dlSVG;
+      });
+      grid.appendChild(el);
+    });
+
+    function switchView(name, btn) {
+      document.querySelectorAll('.demo-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + name).classList.add('active');
+
+      const pill = document.getElementById('count-pill');
+      if (name === 'loading') {
+        pill.textContent = 'Scanning...';
+        pill.classList.remove('active');
+      } else if (name === 'error') {
+        pill.textContent = '0 items';
+        pill.classList.remove('active');
+      } else {
+        pill.textContent = '6 items';
+        pill.classList.add('active');
+      }
+    }
+  </script>
+</body>
+</html>

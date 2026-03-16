@@ -29,19 +29,25 @@ class StatusDisplay {
     this.contentEl.style.display = 'none';
   }
 
-  showError(message = 'No images found. Please ensure you are on a supported social media post page.') {
+  showError(message = 'Open a specific post on Instagram, Threads, Facebook, or X to get started.') {
     this.loadingEl.style.display = 'none';
-    this.errorEl.style.display = 'block';
+    this.errorEl.style.display = 'flex';
     this.contentEl.style.display = 'none';
 
     const errorTextEl = this.errorEl.querySelector('p');
     if (errorTextEl && message) {
       errorTextEl.textContent = message;
     }
+
+    const countEl = document.getElementById('image-count');
+    if (countEl) {
+      countEl.textContent = '0 items';
+      countEl.classList.remove('has-items');
+    }
   }
 
-  showSuccess(message = 'Image download started! Please check your browser\'s download list.') {
-    this.successEl.style.display = 'block';
+  showSuccess(message = 'Download started. Check your downloads folder.') {
+    this.successEl.style.display = 'flex';
 
     const successTextEl = this.successEl.querySelector('p');
     if (successTextEl && message) {
@@ -60,19 +66,12 @@ class StatusDisplay {
   }
 
   updateImageCount(images) {
-    const imageCountEl = document.getElementById('image-count');
-    if (imageCountEl) {
-      const videoCount = images.filter(i => i.mediaType === 'video').length;
-      const imageCount = images.length - videoCount;
+    const countEl = document.getElementById('image-count');
+    if (!countEl) return;
 
-      if (videoCount > 0 && imageCount > 0) {
-        imageCountEl.textContent = `Found ${imageCount} image(s) and ${videoCount} video(s)`;
-      } else if (videoCount > 0) {
-        imageCountEl.textContent = `Found ${videoCount} video(s)`;
-      } else {
-        imageCountEl.textContent = `Found ${imageCount} image(s)`;
-      }
-    }
+    const total = images.length;
+    countEl.textContent = `${total} item${total !== 1 ? 's' : ''}`;
+    countEl.classList.toggle('has-items', total > 0);
   }
 }
 
@@ -97,11 +96,29 @@ class ImageGrid {
       this.imagesGridEl.appendChild(imageItem);
     });
 
-    const hasImages = images.some(i => i.mediaType !== 'video');
-    const hasVideos = images.some(i => i.mediaType === 'video');
-    this.downloadAllBtnEl.style.display = images.length > 0 ? '' : 'none';
-    this.downloadImagesBtnEl.style.display = hasImages ? '' : 'none';
-    this.downloadVideosBtnEl.style.display = hasVideos ? '' : 'none';
+    const imageCount = images.filter(i => i.mediaType !== 'video').length;
+    const videoCount = images.filter(i => i.mediaType === 'video').length;
+
+    if (images.length > 0) {
+      this.downloadAllBtnEl.style.display = '';
+      this.downloadAllBtnEl.textContent = `Download All  ·  ${images.length}`;
+    } else {
+      this.downloadAllBtnEl.style.display = 'none';
+    }
+
+    if (imageCount > 0) {
+      this.downloadImagesBtnEl.style.display = '';
+      this.downloadImagesBtnEl.textContent = `Images  ·  ${imageCount}`;
+    } else {
+      this.downloadImagesBtnEl.style.display = 'none';
+    }
+
+    if (videoCount > 0) {
+      this.downloadVideosBtnEl.style.display = '';
+      this.downloadVideosBtnEl.textContent = `Videos  ·  ${videoCount}`;
+    } else {
+      this.downloadVideosBtnEl.style.display = 'none';
+    }
   }
 
   _createImageItem(image, index) {
@@ -116,7 +133,13 @@ class ImageGrid {
 
     const downloadOverlay = document.createElement('div');
     downloadOverlay.className = 'download-overlay';
-    downloadOverlay.textContent = 'Click to Download';
+
+    const dlCircle = document.createElement('div');
+    dlCircle.className = 'dl-circle';
+    dlCircle.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M8 4v8m0 0L5.5 9.5M8 12l2.5-2.5" stroke="#192a51" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+    downloadOverlay.appendChild(dlCircle);
 
     console.log(`Loading thumbnail ${index + 1}:`, image.thumbnailUrl);
 
@@ -133,7 +156,7 @@ class ImageGrid {
     }
 
     imageItem.addEventListener('click', async () => {
-      await this._downloadSingleImage(image, index + 1, downloadOverlay);
+      await this._downloadSingleImage(image, index + 1, imageItem);
     });
 
     imageItem.appendChild(img);
@@ -142,9 +165,18 @@ class ImageGrid {
     return imageItem;
   }
 
-  async _downloadSingleImage(image, index, overlay) {
+  async _downloadSingleImage(image, index, imageItem) {
+    const circle = imageItem.querySelector('.dl-circle');
+
+    const checkSVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M3 8.5l3.5 3.5 6.5-8" stroke="#f5e6e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+    const dlSVG = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path d="M8 4v8m0 0L5.5 9.5M8 12l2.5-2.5" stroke="#192a51" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+
     try {
-      overlay.textContent = 'Downloading...';
+      imageItem.classList.add('downloading');
 
       await chrome.runtime.sendMessage({
         action: BACKGROUND_MESSAGES.DOWNLOAD_SINGLE_IMAGE,
@@ -152,16 +184,18 @@ class ImageGrid {
         index
       });
 
-      overlay.textContent = 'Downloaded';
+      imageItem.classList.remove('downloading');
+      imageItem.classList.add('downloaded');
+      if (circle) circle.innerHTML = checkSVG;
+
       setTimeout(() => {
-        overlay.textContent = 'Click to Download';
-      }, 1500);
+        imageItem.classList.remove('downloaded');
+        if (circle) circle.innerHTML = dlSVG;
+      }, 2000);
     } catch (error) {
       console.error('Single download failed:', error);
-      overlay.textContent = 'Download Failed';
-      setTimeout(() => {
-        overlay.textContent = 'Click to Download';
-      }, 1500);
+      imageItem.classList.remove('downloading');
+      if (circle) circle.innerHTML = dlSVG;
     }
   }
 
@@ -184,9 +218,11 @@ class ImageGrid {
   async _downloadBatch(items, btn, defaultLabel) {
     if (items.length === 0) return;
 
+    const originalLabel = btn.textContent;
+
     try {
       btn.disabled = true;
-      btn.textContent = 'Downloading...';
+      btn.textContent = defaultLabel;
 
       await chrome.runtime.sendMessage({
         action: BACKGROUND_MESSAGES.DOWNLOAD_IMAGES,
@@ -197,15 +233,15 @@ class ImageGrid {
 
       setTimeout(() => {
         btn.disabled = false;
-        btn.textContent = defaultLabel;
+        btn.textContent = originalLabel;
       }, 2000);
     } catch (err) {
       console.error('Download failed:', err);
       btn.disabled = false;
-      btn.textContent = 'Failed, Retry';
+      btn.textContent = 'Failed — retry';
 
       setTimeout(() => {
-        btn.textContent = defaultLabel;
+        btn.textContent = originalLabel;
       }, 2000);
     }
   }
