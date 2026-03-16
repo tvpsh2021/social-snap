@@ -35,6 +35,7 @@ const SINGLE_POST_PATTERNS = {
   ],
   [PLATFORMS.X]: [
     /^https:\/\/x\.com\/[^/]+\/status\/[^/]+\/photo\/\d+/,  // /username/status/statusId/photo/number
+    /^https:\/\/x\.com\/[^/]+\/status\/[^/]+\/video\/\d+/,  // /username/status/statusId/video/number
     /^https:\/\/x\.com\/[^/]+\/status\/\d+\/?(?:\?.*)?$/    // plain tweet URL (video-only tweets)
   ]
 };
@@ -1028,9 +1029,10 @@ class XPlatform extends BasePlatform {
 
     await wait(CAROUSEL.X.INITIAL_WAIT);
 
-    // Check if we're in photo mode (URL contains /photo/)
-    const isPhotoMode = window.location.pathname.includes('/photo/');
-    log('Photo mode detected:', isPhotoMode);
+    // Check if we're in media carousel mode (URL contains /photo/ or /video/)
+    const isPhotoMode = window.location.pathname.includes('/photo/')
+      || window.location.pathname.includes('/video/');
+    log('Media carousel mode detected:', isPhotoMode);
 
     // Find the main dialog container
     let mainDialog = null;
@@ -1618,13 +1620,14 @@ function setupSpaCarouselDetection() {
       return;
     }
 
-    // Check if we're in photo mode
-    const isPhotoMode = window.location.pathname.includes('/photo/');
-    if (!isPhotoMode) {
+    // Check if we're in a media carousel mode (/photo/ or /video/)
+    const isMediaMode = window.location.pathname.includes('/photo/')
+      || window.location.pathname.includes('/video/');
+    if (!isMediaMode) {
       return;
     }
 
-    // Check if any mutation added a photo dialog
+    // Check if any mutation added a photo/video dialog
     for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
         for (const node of mutation.addedNodes) {
