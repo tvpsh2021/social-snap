@@ -34,7 +34,8 @@ const SINGLE_POST_PATTERNS = {
     /^https:\/\/www\.facebook\.com\/[^/]+\/photos\//        // /username/photos/photoId
   ],
   [PLATFORMS.X]: [
-    /^https:\/\/x\.com\/[^/]+\/status\/[^/]+\/photo\/\d+/   // /username/status/statusId/photo/number - Only photo mode
+    /^https:\/\/x\.com\/[^/]+\/status\/[^/]+\/photo\/\d+/,  // /username/status/statusId/photo/number
+    /^https:\/\/x\.com\/[^/]+\/status\/\d+\/?(?:\?.*)?$/    // plain tweet URL (video-only tweets)
   ]
 };
 
@@ -1042,6 +1043,10 @@ class XPlatform extends BasePlatform {
     }
 
     if (!mainDialog) {
+      if (!isPhotoMode) {
+        log('No photo dialog found on tweet page, trying direct video extraction...');
+        return this._extractVideoFromTweetPage();
+      }
       log('No main dialog found. Cannot extract images.');
       return [];
     }
@@ -1391,6 +1396,65 @@ class XPlatform extends BasePlatform {
 
     log('No next button found');
     return null;
+  }
+
+  _extractVideoFromTweetPage() {
+    log('Extracting video from tweet page (non-photo-mode)...');
+
+    const articles = document.querySelectorAll('article[data-testid="tweet"]');
+    for (const article of articles) {
+      const video = article.querySelector('video[poster]');
+      if (!video) continue;
+
+      const poster = video.getAttribute('poster');
+      const idMatch = (poster || '').match(/(?:amplify_video_thumb|ext_tw_video_thumb)\/(\d+)\//);
+      const videoId = idMatch ? idMatch[1] : null;
+
+      log(`Tweet page video found: videoId=${videoId}, poster=${poster?.substring(0, 80)}`);
+
+      const intercepted = videoId ? X_VIDEO_CACHE.get(videoId) : null;
+      if (intercepted) {
+        log(`✓ Got video URL from cache: isHLS=${intercepted.isHLS}`);
+        return [{
+          index: 1,
+          alt: 'Video',
+          thumbnailUrl: poster || '',
+          fullSizeUrl: intercepted.fullSizeUrl,
+          isHLS: intercepted.isHLS || false,
+          maxWidth: 0,
+          mediaType: 'video'
+        }];
+      }
+
+      const perfFallback = videoId ? this._findXVideoUrlFromPerformance(videoId) : null;
+      if (perfFallback) {
+        log('Got video URL from performance entries');
+        return [{
+          index: 1,
+          alt: 'Video',
+          thumbnailUrl: poster || '',
+          fullSizeUrl: perfFallback.fullSizeUrl,
+          isHLS: true,
+          maxWidth: 0,
+          mediaType: 'video'
+        }];
+      }
+
+      const tweetUrl = this._getTweetUrl();
+      log(`Video URL not found, using tweet URL fallback: ${tweetUrl}`);
+      return [{
+        index: 1,
+        alt: 'Video',
+        thumbnailUrl: poster || '',
+        fullSizeUrl: tweetUrl,
+        isHLS: true,
+        maxWidth: 0,
+        mediaType: 'video'
+      }];
+    }
+
+    log('No video found in tweet articles');
+    return [];
   }
 
   _findBoundaryElement() {
