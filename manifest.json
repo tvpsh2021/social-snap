@@ -36,6 +36,12 @@
   },
   "content_scripts": [
     {
+      "matches": ["https://x.com/*"],
+      "js": ["src/content/x-fetch-interceptor.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
       "matches": [
         "https://www.threads.com/@*/post/*",
         "https://www.threads.com/t/*",

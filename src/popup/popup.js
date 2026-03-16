@@ -97,11 +97,14 @@ class ImageGrid {
     });
 
     const imageCount = images.filter(i => i.mediaType !== 'video').length;
-    const videoCount = images.filter(i => i.mediaType === 'video').length;
+    const directVideoCount = images.filter(i => i.mediaType === 'video' && !i.isHLS).length;
+    const hlsVideos = images.filter(i => i.mediaType === 'video' && i.isHLS);
 
-    if (images.length > 0) {
+    // "Download All" counts only directly downloadable items
+    const downloadableCount = imageCount + directVideoCount;
+    if (downloadableCount > 0) {
       this.downloadAllBtnEl.style.display = '';
-      this.downloadAllBtnEl.textContent = `Download All  ·  ${images.length}`;
+      this.downloadAllBtnEl.textContent = `Download All  ·  ${downloadableCount}`;
     } else {
       this.downloadAllBtnEl.style.display = 'none';
     }
@@ -113,12 +116,70 @@ class ImageGrid {
       this.downloadImagesBtnEl.style.display = 'none';
     }
 
-    if (videoCount > 0) {
+    if (directVideoCount > 0) {
       this.downloadVideosBtnEl.style.display = '';
-      this.downloadVideosBtnEl.textContent = `Videos  ·  ${videoCount}`;
+      this.downloadVideosBtnEl.textContent = `Videos  ·  ${directVideoCount}`;
     } else {
       this.downloadVideosBtnEl.style.display = 'none';
     }
+
+    this._renderHlsSection(hlsVideos);
+  }
+
+  _renderHlsSection(hlsVideos) {
+    const sectionEl = document.getElementById('hls-section');
+    const commandsEl = document.getElementById('hls-commands');
+    if (!sectionEl || !commandsEl) return;
+
+    if (hlsVideos.length === 0) {
+      sectionEl.style.display = 'none';
+      return;
+    }
+
+    commandsEl.innerHTML = '';
+    hlsVideos.forEach((video, index) => {
+      const command = `yt-dlp "${video.fullSizeUrl}"`;
+
+      const row = document.createElement('div');
+      row.className = 'hls-command-row';
+
+      if (hlsVideos.length > 1) {
+        const label = document.createElement('span');
+        label.className = 'hls-command-label';
+        label.textContent = `Video ${index + 1}`;
+        row.appendChild(label);
+      }
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'hls-command-input';
+      input.value = command;
+      input.readOnly = true;
+      input.addEventListener('click', () => input.select());
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'hls-copy-btn';
+      copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(command).then(() => {
+          copyBtn.textContent = 'Copied!';
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.textContent = 'Copy';
+            copyBtn.classList.remove('copied');
+          }, 1500);
+        }).catch(() => {
+          input.select();
+          document.execCommand('copy');
+        });
+      });
+
+      row.appendChild(input);
+      row.appendChild(copyBtn);
+      commandsEl.appendChild(row);
+    });
+
+    sectionEl.style.display = 'block';
   }
 
   _createImageItem(image, index) {
@@ -151,13 +212,35 @@ class ImageGrid {
     if (image.mediaType === 'video') {
       const videoBadge = document.createElement('div');
       videoBadge.className = 'video-badge';
-      videoBadge.textContent = 'VIDEO';
+      videoBadge.textContent = image.isHLS ? 'HLS' : 'VIDEO';
       imageItem.appendChild(videoBadge);
     }
 
-    imageItem.addEventListener('click', async () => {
-      await this._downloadSingleImage(image, index + 1, imageItem);
-    });
+    if (image.isHLS) {
+      const command = `yt-dlp "${image.fullSizeUrl}"`;
+      dlCircle.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+        <path d="M10.5 8H5.5M8 5.5L5.5 8 8 10.5" stroke="#192a51" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+      imageItem.title = 'Click to copy yt-dlp command';
+      imageItem.addEventListener('click', () => {
+        navigator.clipboard.writeText(command).then(() => {
+          const circle = imageItem.querySelector('.dl-circle');
+          const original = circle.innerHTML;
+          circle.innerHTML = `<svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M3 8.5l3.5 3.5 6.5-8" stroke="#70c4a0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>`;
+          imageItem.classList.add('downloaded');
+          setTimeout(() => {
+            imageItem.classList.remove('downloaded');
+            circle.innerHTML = original;
+          }, 1500);
+        }).catch(() => {});
+      });
+    } else {
+      imageItem.addEventListener('click', async () => {
+        await this._downloadSingleImage(image, index + 1, imageItem);
+      });
+    }
 
     imageItem.appendChild(img);
     imageItem.appendChild(downloadOverlay);

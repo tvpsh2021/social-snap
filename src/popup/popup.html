@@ -380,6 +380,87 @@
         border-color: rgba(150,122,161,0.35);
         color: var(--color-text-secondary);
       }
+
+      /* ── HLS section ─────────────────────────────── */
+      .hls-section {
+        margin: 0 10px 12px;
+        border: 1px solid rgba(150,122,161,0.2);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .hls-section-header {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 12px 8px;
+        border-bottom: 1px solid rgba(150,122,161,0.12);
+      }
+
+      .hls-section-title {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+
+      .hls-section-note {
+        font-size: 11px;
+        color: var(--color-text-faint);
+        padding: 8px 12px 6px;
+        line-height: 1.5;
+      }
+
+      .hls-command-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px 10px;
+      }
+
+      .hls-command-label {
+        font-size: 10px;
+        color: var(--color-text-faint);
+        flex-shrink: 0;
+        min-width: 40px;
+      }
+
+      .hls-command-input {
+        flex: 1;
+        background: var(--color-surf-0);
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        color: var(--color-text-muted);
+        font-family: 'Courier New', monospace;
+        font-size: 10px;
+        padding: 6px 8px;
+        outline: none;
+        cursor: text;
+        min-width: 0;
+      }
+
+      .hls-copy-btn {
+        flex-shrink: 0;
+        background: var(--color-surf-1);
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        color: var(--color-text-muted);
+        font-family: 'DM Sans', sans-serif;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 6px 10px;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+      }
+      .hls-copy-btn:hover {
+        background: var(--color-surf-2);
+        color: var(--color-text-primary);
+      }
+      .hls-copy-btn.copied {
+        color: #70c4a0;
+        border-color: rgba(100,180,140,0.3);
+      }
     </style>
   </head>
   <body>
@@ -444,6 +525,17 @@
           <button id="download-images-btn" class="download-btn download-btn-images" style="display:none">Images</button>
           <button id="download-videos-btn" class="download-btn download-btn-video" style="display:none">Videos</button>
         </div>
+      </div>
+      <div id="hls-section" class="hls-section" style="display:none">
+        <div class="hls-section-header">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <path d="M2 8a6 6 0 1 0 12 0A6 6 0 0 0 2 8z" stroke="#aaa1c8" stroke-width="1.4"/>
+            <path d="M8 5v3.5l2 2" stroke="#aaa1c8" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          <span class="hls-section-title">Stream Download</span>
+        </div>
+        <p class="hls-section-note">This video uses HLS streaming and cannot be downloaded directly. Run the command below in your terminal (<a href="https://github.com/yt-dlp/yt-dlp" target="_blank" style="color:var(--color-text-muted)">yt-dlp</a> required):</p>
+        <div id="hls-commands"></div>
       </div>
     </div>
 

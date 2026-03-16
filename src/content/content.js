@@ -116,6 +116,7 @@ const SELECTORS = {
     CAROUSEL_IMAGES: [
       'li[role="listitem"] img'
     ],
+    CAROUSEL_VIDEOS: 'li[role="listitem"] video',
     NEXT_BUTTONS: [
       'div[data-testid="Carousel-NavRight"] button'
     ],
@@ -128,6 +129,21 @@ const SELECTORS = {
     BOUNDARY_INDICATOR: 'div[aria-expanded="true"]'
   }
 };
+
+// === X.COM VIDEO CACHE ===
+// Populated by x-fetch-interceptor.js (MAIN world) via CustomEvents on document.
+const X_VIDEO_CACHE = new Map(); // videoId -> { fullSizeUrl, thumbnailUrl }
+
+if (window.location.hostname.includes('x.com')) {
+  document.addEventListener('__socialSnapXVideo', (e) => {
+    const { videoId, fullSizeUrl, thumbnailUrl, isHLS } = e.detail;
+    if (videoId) X_VIDEO_CACHE.set(videoId, { fullSizeUrl, thumbnailUrl, isHLS: isHLS || false });
+  });
+
+  document.addEventListener('__socialSnapXVideoCache', (e) => {
+    Object.entries(e.detail).forEach(([id, data]) => X_VIDEO_CACHE.set(id, data));
+  });
+}
 
 function log(...message) {
   if (GENERAL_CONFIG.DEBUG) {
@@ -1004,6 +1020,11 @@ class XPlatform extends BasePlatform {
 
   async extractImages() {
     log('=== Starting X.com image extraction ===');
+
+    // Request any video URLs already intercepted by x-fetch-interceptor.js (MAIN world).
+    // dispatchEvent is synchronous, so X_VIDEO_CACHE will be populated before we proceed.
+    document.dispatchEvent(new CustomEvent('__socialSnapRequestVideos'));
+
     await wait(CAROUSEL.X.INITIAL_WAIT);
 
     // Check if we're in photo mode (URL contains /photo/)
@@ -1056,13 +1077,16 @@ class XPlatform extends BasePlatform {
       log('Found boundary element, applying boundary filter...');
       const beforeFilterCount = mainPostImages.length;
 
-      mainPostImages = mainPostImages.filter(img => {
-        if (!img || !img.isConnected) return false;
-        const position = boundaryElement.compareDocumentPosition(img);
+      mainPostImages = mainPostImages.filter(item => {
+        // For video data objects, use the stored videoElement for position comparison
+        const el = item?._type === 'video' ? item.videoElement : item;
+        if (!el || !el.isConnected) return false;
+        const position = boundaryElement.compareDocumentPosition(el);
         const isBeforeBoundary = position & Node.DOCUMENT_POSITION_PRECEDING;
 
         if (!isBeforeBoundary) {
-          log('Filtered out image after boundary:', img.src.substring(0, 50) + '...');
+          const label = item?._type === 'video' ? 'video' : item.src?.substring(0, 50) + '...';
+          log('Filtered out item after boundary:', label);
         }
 
         return isBeforeBoundary;
@@ -1074,9 +1098,19 @@ class XPlatform extends BasePlatform {
     }
 
     const imageData = [];
-    mainPostImages.forEach((img, index) => {
-      if (img && img.src) {
-        imageData.push(this.createImageData(img, index));
+    mainPostImages.forEach((item, index) => {
+      if (item && item._type === 'video') {
+        imageData.push({
+          index: index + 1,
+          alt: 'Video',
+          thumbnailUrl: item.thumbnailUrl,
+          fullSizeUrl: item.fullSizeUrl,
+          isHLS: item.isHLS || false,
+          maxWidth: 0,
+          mediaType: 'video'
+        });
+      } else if (item && item.src) {
+        imageData.push(this.createImageData(item, index));
       }
     });
 
@@ -1122,20 +1156,20 @@ class XPlatform extends BasePlatform {
     log('Starting X.com carousel navigation...');
     log('X.com carousel works with lazy loading: initially loads 2 <li>, then loads new ones on navigation');
 
-    const imageMap = new Map();
+    const imageMap = new Map(); // src -> img element
+    const videoMap = new Map(); // poster URL -> { _type, thumbnailUrl, fullSizeUrl, videoId, videoElement }
     let navigationCount = 0;
 
-    const collectCurrentlyVisibleImages = () => {
-      log(`\n--- Collecting images (attempt ${navigationCount + 1}) ---`);
-      let foundImages = false;
-      let newImagesFound = 0;
+    const collectCurrentlyVisibleMedia = () => {
+      log(`\n--- Collecting media (attempt ${navigationCount + 1}) ---`);
+      let newItemsFound = 0;
 
+      // Collect images
       for (const selector of SELECTORS.X.CAROUSEL_IMAGES) {
         const carouselImages = container.querySelectorAll(selector);
         log(`Trying carousel selector "${selector}": found ${carouselImages.length} images`);
 
         if (carouselImages.length > 0) {
-          foundImages = true;
           carouselImages.forEach((img, index) => {
             if (img && img.src) {
               const rect = img.getBoundingClientRect();
@@ -1151,13 +1185,12 @@ class XPlatform extends BasePlatform {
                 alreadyCollected: imageMap.has(img.src)
               });
 
-              // Check if image is valid and visible
-              if (isVisible && isValidImage) {
-                if (!imageMap.has(img.src)) {
-                  log(`✓ Found NEW image ${imageMap.size + 1}: ${img.src.substring(0, 50)}...`);
-                  imageMap.set(img.src, img);
-                  newImagesFound++;
-                }
+              // Skip imgs inside a <li> that also has a <video> — those are video thumbnails
+              const isInsideVideoLi = !!img.closest('li[role="listitem"]')?.querySelector('video');
+              if (isVisible && isValidImage && !imageMap.has(img.src) && !isInsideVideoLi) {
+                log(`✓ Found NEW image ${imageMap.size + 1}: ${img.src}`);
+                imageMap.set(img.src, img);
+                newItemsFound++;
               }
             }
           });
@@ -1165,19 +1198,83 @@ class XPlatform extends BasePlatform {
         }
       }
 
-      if (!foundImages) {
-        log('No carousel images found with any selector');
-      }
+      // Collect videos
+      const allVideoEls = container.querySelectorAll('li[role="listitem"] video');
+      log(`Total <video> elements in carousel li items: ${allVideoEls.length}`);
+      allVideoEls.forEach((v, i) => {
+        log(`  video[${i}] aria-label="${v.getAttribute('aria-label')}" poster="${v.getAttribute('poster')?.substring(0, 80)}"`);
+      });
 
-      log(`Collection result: ${newImagesFound} new images, ${imageMap.size} total images`);
-      return newImagesFound;
+      const videoEls = container.querySelectorAll(SELECTORS.X.CAROUSEL_VIDEOS);
+      videoEls.forEach(video => {
+        const poster = video.getAttribute('poster');
+        // Deduplicate by poster URL or video element reference
+        const alreadyCollected = (poster && videoMap.has(poster))
+          || Array.from(videoMap.values()).some(v => v.videoElement === video);
+        if (alreadyCollected) return;
+
+        const rect = video.getBoundingClientRect();
+        const isVisible = rect.width > IMAGE_FILTERS.CAROUSEL_MIN_WIDTH && rect.height > IMAGE_FILTERS.CAROUSEL_MIN_HEIGHT;
+        if (!isVisible) return;
+
+        // Support amplify_video_thumb and ext_tw_video_thumb
+        const idMatch = (poster || '').match(/(?:amplify_video_thumb|ext_tw_video_thumb)\/(\d+)\//);
+        const videoId = idMatch ? idMatch[1] : null;
+        const intercepted = videoId ? X_VIDEO_CACHE.get(videoId) : null;
+
+        log(`Video found: videoId=${videoId}, intercepted=${!!intercepted}, poster=${poster}`);
+
+        if (intercepted) {
+          videoMap.set(poster || video.src || String(videoMap.size), {
+            _type: 'video',
+            thumbnailUrl: poster || '',
+            fullSizeUrl: intercepted.fullSizeUrl,
+            isHLS: intercepted.isHLS || false,
+            videoId,
+            videoElement: video
+          });
+          newItemsFound++;
+          log(`✓ Found NEW video ${videoMap.size}: videoId=${videoId} isHLS=${intercepted.isHLS}`);
+        } else {
+          // Fallback: scan performance entries for a video.twimg.com URL matching this videoId
+          const perfFallback = videoId ? this._findXVideoUrlFromPerformance(videoId) : null;
+          if (perfFallback) {
+            videoMap.set(poster || String(videoMap.size), {
+              _type: 'video',
+              thumbnailUrl: poster || '',
+              fullSizeUrl: perfFallback.fullSizeUrl,
+              isHLS: perfFallback.isHLS,
+              videoId,
+              videoElement: video
+            });
+            newItemsFound++;
+            log(`✓ Found NEW video via performance fallback ${videoMap.size}: videoId=${videoId}`);
+          } else {
+            // Last resort: mark with the tweet URL so yt-dlp can handle it
+            const tweetUrl = this._getTweetUrl();
+            log(`Video ${videoId} not found in cache or performance entries, using tweet URL fallback: ${tweetUrl}`);
+            videoMap.set(poster || String(videoMap.size), {
+              _type: 'video',
+              thumbnailUrl: poster || '',
+              fullSizeUrl: tweetUrl,
+              isHLS: true,
+              videoId: videoId || 'unknown',
+              videoElement: video
+            });
+            newItemsFound++;
+          }
+        }
+      });
+
+      log(`Collection result: ${newItemsFound} new items (${imageMap.size} images, ${videoMap.size} videos)`);
+      return newItemsFound;
     };
 
-    // Collect initial images (X.com initially loads first 2 <li>)
-    log('Collecting initial images (first 2 <li> elements)...');
-    collectCurrentlyVisibleImages();
+    // Collect initial media (X.com initially loads first 2 <li>)
+    log('Collecting initial media (first 2 <li> elements)...');
+    collectCurrentlyVisibleMedia();
 
-    // Navigate through carousel to load remaining images
+    // Navigate through carousel to load remaining slides
     while (navigationCount < CAROUSEL.X.MAX_ATTEMPTS) {
       const nextButton = this._findNextButton(container);
       if (!nextButton) {
@@ -1188,30 +1285,24 @@ class XPlatform extends BasePlatform {
       log(`\n=== Navigation ${navigationCount + 1}/${CAROUSEL.X.MAX_ATTEMPTS} ===`);
       log('Clicking Next slide button...');
 
-      // Click the button
       nextButton.click();
       navigationCount++;
 
-      // Wait longer for X.com to lazy-load new images
-      await wait(CAROUSEL.X.WAIT_TIME); // Extra 500ms for lazy loading
+      await wait(CAROUSEL.X.WAIT_TIME);
 
-      // Collect images after navigation
-      const newImages = collectCurrentlyVisibleImages();
+      const newItems = collectCurrentlyVisibleMedia();
 
-      // If no new images found after 2 attempts, we might have reached the end
-      if (newImages === 0 && navigationCount >= 2) {
-        log('No new images found in last navigation, checking if we\'ve reached the end...');
+      if (newItems === 0 && navigationCount >= 2) {
+        log('No new media found in last navigation, checking if we\'ve reached the end...');
 
-        // Try one more navigation to confirm we're at the end
         const confirmButton = this._findNextButton(container);
         if (!confirmButton) {
           log('Confirmed: No more Next button, ending navigation');
           break;
         }
 
-        // If button exists but no new images after 3 attempts, stop
         if (navigationCount >= 3) {
-          log('No new images after 3 attempts, stopping navigation');
+          log('No new media after 3 attempts, stopping navigation');
           break;
         }
       }
@@ -1219,14 +1310,63 @@ class XPlatform extends BasePlatform {
 
     log('\n=== X.com Carousel Navigation Complete ===');
     log(`Total navigation attempts: ${navigationCount}`);
-    log(`Total unique images found: ${imageMap.size}`);
+    log(`Total unique images: ${imageMap.size}, videos: ${videoMap.size}`);
 
-    const finalImages = Array.from(imageMap.values());
-    finalImages.forEach((img, index) => {
-      log(`Final image ${index + 1}: ${img.src.substring(0, 60)}...`);
+    // Reconstruct ordered list by iterating <li> elements in DOM order
+    const allListItems = container.querySelectorAll('li[role="listitem"]');
+    const orderedMedia = [];
+
+    allListItems.forEach(li => {
+      // Check for video FIRST — a <li> with a <video> is always a video item.
+      // Checking images first would incorrectly match the poster <img> inside the video <li>.
+      const video = li.querySelector('video');
+      if (video) {
+        const poster = video.getAttribute('poster');
+        const videoData = (poster ? videoMap.get(poster) : null)
+          || Array.from(videoMap.values()).find(v => v.videoElement === video)
+          || null;
+        if (videoData) {
+          orderedMedia.push(videoData);
+        }
+        return;
+      }
+
+      // Check for image (only if no video in this <li>)
+      const img = Array.from(li.querySelectorAll('img')).find(i => imageMap.has(i.src));
+      if (img) {
+        orderedMedia.push(img);
+      }
     });
 
-    return finalImages;
+    orderedMedia.forEach((item, index) => {
+      const label = item._type === 'video'
+        ? `video (${item.videoId})`
+        : `image: ${item.src.substring(0, 60)}...`;
+      log(`Final item ${index + 1}: ${label}`);
+    });
+
+    return orderedMedia;
+  }
+
+  _findXVideoUrlFromPerformance(videoId) {
+    const entries = performance.getEntriesByType('resource');
+    const related = entries.filter(e =>
+      e.name.includes('video.twimg.com') && e.name.includes(`/${videoId}/`)
+    );
+
+    if (related.length === 0) return null;
+
+    const m3u8s = related.filter(e => e.name.includes('.m3u8'));
+    // Prefer video-track m3u8 over audio-only
+    const videoM3u8s = m3u8s.filter(e => !e.name.includes('/mp4a/') && !e.name.includes('/aud/'));
+    const best = videoM3u8s[0] || m3u8s[0];
+    if (best) return { fullSizeUrl: best.name, isHLS: true };
+
+    return null;
+  }
+
+  _getTweetUrl() {
+    return window.location.origin + window.location.pathname.replace(/\/photo\/\d+$/, '');
   }
 
   _findNextButton(container) {
