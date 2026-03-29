@@ -657,13 +657,18 @@ class InstagramPlatform extends BasePlatform {
         }
       };
 
-      // first image
-      if (zeroPxLi && listItems.length === 3) {
-        log('Rule matched: Found li with translateX(0px). and li=3');
-        await insertMediaFromLi(listItems[1]);
+      if (listItems.length >= 3) {
+        // Standard carousel: 3+ items in DOM (previous, current, next sliding window)
+        if (zeroPxLi) {
+          log('Rule matched: Found li with translateX(0px) and li>=3');
+          await insertMediaFromLi(listItems[1]);
+        }
+        await insertMediaFromLi(listItems[2]);
+      } else if (zeroPxLi) {
+        // Single-image post wrapped in ul/li, or carousel with fewer than 3 items loaded
+        log(`Processing zeroPxLi directly (listItems.length=${listItems.length})`);
+        await insertMediaFromLi(zeroPxLi);
       }
-
-      await insertMediaFromLi(listItems[2]);
     };
 
     while (navigationCount < CAROUSEL.INSTAGRAM.MAX_ATTEMPTS) {
