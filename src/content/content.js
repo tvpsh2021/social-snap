@@ -31,7 +31,8 @@ const SINGLE_POST_PATTERNS = {
   ],
   [PLATFORMS.FACEBOOK]: [
     /^https:\/\/www\.facebook\.com\/photo\/\?fbid=/,        // /photo/?fbid=photoId
-    /^https:\/\/www\.facebook\.com\/[^/]+\/photos\//        // /username/photos/photoId
+    /^https:\/\/www\.facebook\.com\/[^/]+\/photos\//,       // /username/photos/photoId
+    /^https:\/\/www\.facebook\.com\/reel\/\d+/              // /reel/reelId
   ],
   [PLATFORMS.X]: [
     /^https:\/\/x\.com\/[^/]+\/status\/[^/]+\/photo\/\d+/,  // /username/status/statusId/photo/number
@@ -146,6 +147,7 @@ if (window.location.hostname.includes('x.com')) {
     Object.entries(e.detail).forEach(([id, data]) => X_VIDEO_CACHE.set(id, data));
   });
 }
+
 
 function log(...message) {
   if (GENERAL_CONFIG.DEBUG) {
@@ -941,11 +943,17 @@ class FacebookPlatform extends BasePlatform {
 
     await wait(CAROUSEL.FACEBOOK.INITIAL_WAIT);
 
+    const isReelPage = window.location.pathname.includes('/reel/');
+    if (isReelPage) {
+      log('Facebook Reel page detected');
+      return this._extractReelVideo();
+    }
+
     const isPhotoPage = window.location.pathname.includes('/photo') ||
                        window.location.search.includes('fbid=');
 
     if (!isPhotoPage) {
-      log('Not a Facebook photo page, no images to extract');
+      log('Not a Facebook photo/reel page, no media to extract');
       return [];
     }
 
@@ -1011,6 +1019,84 @@ class FacebookPlatform extends BasePlatform {
 
     log('Extracted Facebook image information:', imageData);
     return imageData;
+  }
+
+  async _extractReelVideo() {
+    log('Extracting video from Facebook Reel...');
+
+    const video = document.querySelector('div[data-pagelet="Reels"] video')
+      || document.querySelector('video[playsinline]');
+    const poster = video ? (video.getAttribute('poster') || '') : '';
+
+    const videoUrl = this._extractVideoUrlFromDashManifest();
+    if (videoUrl) {
+      log(`✓ Found Reel video URL from DASH manifest: ${videoUrl.substring(0, 80)}`);
+      return [{
+        index: 1,
+        alt: 'Video',
+        thumbnailUrl: poster,
+        fullSizeUrl: videoUrl,
+        maxWidth: 0,
+        mediaType: 'video'
+      }];
+    }
+
+    log('Could not find video URL in DASH manifest');
+    return [];
+  }
+
+  _extractVideoUrlFromDashManifest() {
+    const scripts = document.querySelectorAll('script');
+    for (const script of scripts) {
+      const text = script.textContent || '';
+      const idx = text.indexOf('dash_manifests');
+      if (idx === -1) continue;
+
+      const prefix = 'manifest_xml":"';
+      const xmlStart = text.indexOf(prefix, idx);
+      if (xmlStart === -1) continue;
+
+      const valueStart = xmlStart + prefix.length;
+
+      // Find the end of the JSON string value (unescaped quote)
+      let i = valueStart;
+      while (i < text.length) {
+        if (text[i] === '\\') { i += 2; continue; }
+        if (text[i] === '"') break;
+        i++;
+      }
+
+      let raw = text.substring(valueStart, i);
+      raw = raw
+        .replace(/\\u003C/g, '<')
+        .replace(/\\u003E/g, '>')
+        .replace(/\\\//g, '/')
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, '\n')
+        .replace(/\\u00253D/g, '%3D');
+
+      // Extract video BaseURLs using regex (XML parsing fails on unescaped & in URLs)
+      const videoSetMatch = raw.match(/<AdaptationSet[^>]*contentType="video"[^>]*>([\s\S]*?)<\/AdaptationSet>/);
+      if (!videoSetMatch) continue;
+
+      const videoSet = videoSetMatch[1];
+      const repRegex = /<Representation[^>]*bandwidth="(\d+)"[^>]*>[\s\S]*?<BaseURL>([^<]+)<\/BaseURL>/g;
+      let best = null;
+      let match;
+      while ((match = repRegex.exec(videoSet)) !== null) {
+        const bandwidth = parseInt(match[1]);
+        const url = match[2].replace(/&amp;/g, '&');
+        if (!best || bandwidth > best.bandwidth) {
+          best = { bandwidth, url };
+        }
+      }
+
+      if (best) {
+        log(`DASH manifest: found ${videoSet.match(/<Representation/g)?.length || 0} representations, picked bandwidth=${best.bandwidth}`);
+        return best.url;
+      }
+    }
+    return null;
   }
 }
 

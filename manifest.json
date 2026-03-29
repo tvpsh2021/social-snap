@@ -50,6 +50,7 @@
         "https://www.instagram.com/reel/*",
         "https://www.facebook.com/photo/*",
         "https://www.facebook.com/*/photos/*",
+        "https://www.facebook.com/reel/*",
         "https://x.com/*/status/*"
       ],
       "js": [
