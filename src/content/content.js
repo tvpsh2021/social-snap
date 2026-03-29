@@ -1074,6 +1074,27 @@ class XPlatform extends BasePlatform {
     } else {
       log('Extracting single image...');
       mainPostImages = this._extractSingleImage(mainDialog);
+
+      // If no images found, check for a GIF/video inside the dialog
+      if (mainPostImages.length === 0) {
+        log('No single image found, checking for GIF/video in dialog...');
+        const video = mainDialog.querySelector('video');
+        if (video) {
+          const videoSrc = video.getAttribute('src') || '';
+          const poster = video.getAttribute('poster') || '';
+          if (videoSrc.includes('tweet_video/')) {
+            log(`✓ Found GIF in dialog: ${videoSrc}`);
+            mainPostImages = [{
+              _type: 'video',
+              thumbnailUrl: poster,
+              fullSizeUrl: videoSrc,
+              isHLS: false,
+              videoId: 'gif',
+              videoElement: video
+            }];
+          }
+        }
+      }
     }
 
     log(`Final selected X.com post image count: ${mainPostImages.length}`);
@@ -1225,13 +1246,27 @@ class XPlatform extends BasePlatform {
         if (!isVisible) return;
 
         // Support amplify_video_thumb and ext_tw_video_thumb
-        const idMatch = (poster || '').match(/(?:amplify_video_thumb|ext_tw_video_thumb)\/(\d+)\//);
+        const idMatch = (poster || '').match(/(?:amplify_video_thumb|ext_tw_video_thumb|tweet_video_thumb)\/([^/]+)\//);
         const videoId = idMatch ? idMatch[1] : null;
         const intercepted = videoId ? X_VIDEO_CACHE.get(videoId) : null;
 
         log(`Video found: videoId=${videoId}, intercepted=${!!intercepted}, poster=${poster}`);
 
-        if (intercepted) {
+        // GIF detection: direct src containing tweet_video
+        const videoSrc = video.getAttribute('src') || '';
+        const isGif = videoSrc.includes('tweet_video/');
+        if (isGif) {
+          videoMap.set(poster || videoSrc || String(videoMap.size), {
+            _type: 'video',
+            thumbnailUrl: poster || '',
+            fullSizeUrl: videoSrc,
+            isHLS: false,
+            videoId: videoId || 'gif',
+            videoElement: video
+          });
+          newItemsFound++;
+          log(`✓ Found NEW GIF ${videoMap.size}: ${videoSrc}`);
+        } else if (intercepted) {
           videoMap.set(poster || video.src || String(videoMap.size), {
             _type: 'video',
             thumbnailUrl: poster || '',
@@ -1409,10 +1444,26 @@ class XPlatform extends BasePlatform {
       if (!video) continue;
 
       const poster = video.getAttribute('poster');
-      const idMatch = (poster || '').match(/(?:amplify_video_thumb|ext_tw_video_thumb)\/(\d+)\//);
+      const idMatch = (poster || '').match(/(?:amplify_video_thumb|ext_tw_video_thumb|tweet_video_thumb)\/([^/]+)\//);
       const videoId = idMatch ? idMatch[1] : null;
 
       log(`Tweet page video found: videoId=${videoId}, poster=${poster?.substring(0, 80)}`);
+
+      // GIF detection: video elements with direct src containing tweet_video are GIFs
+      const videoSrc = video.getAttribute('src') || '';
+      const isGif = videoSrc.includes('tweet_video/');
+      if (isGif) {
+        log(`✓ Detected GIF with direct MP4 src: ${videoSrc}`);
+        return [{
+          index: 1,
+          alt: 'GIF',
+          thumbnailUrl: poster || '',
+          fullSizeUrl: videoSrc,
+          isHLS: false,
+          maxWidth: 0,
+          mediaType: 'video'
+        }];
+      }
 
       const intercepted = videoId ? X_VIDEO_CACHE.get(videoId) : null;
       if (intercepted) {

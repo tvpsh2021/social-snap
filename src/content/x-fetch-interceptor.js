@@ -41,11 +41,11 @@
 
         // Extract video ID from the URL, or fall back to the thumbnail URL.
         let videoId = null;
-        const urlIdMatch = fullSizeUrl.match(/\/(amplify_video|ext_tw_video)\/(\d+)\//);
+        const urlIdMatch = fullSizeUrl.match(/\/(amplify_video|ext_tw_video|tweet_video)\/([^/]+)\//);
         if (urlIdMatch) {
           videoId = urlIdMatch[2];
         } else if (thumbnailUrl) {
-          const thumbIdMatch = thumbnailUrl.match(/\/(amplify_video_thumb|amplify_video|ext_tw_video)\/(\d+)\//);
+          const thumbIdMatch = thumbnailUrl.match(/\/(amplify_video_thumb|amplify_video|ext_tw_video|tweet_video_thumb|tweet_video)\/([^/]+)\//);
           if (thumbIdMatch) videoId = thumbIdMatch[2];
         }
 
