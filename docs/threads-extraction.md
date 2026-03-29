@@ -104,19 +104,6 @@ Both branches run. The result list contains photos first (from `pictureImgs`), f
 
 ---
 
-## Key Differences from Instagram
-
-| Aspect | Threads | Instagram |
-|---|---|---|
-| Video URL | Direct CDN URL in `video.src` | Blob URL; real URL requires performance entry scanning |
-| `video.play()` needed | No | Yes (preload=none) |
-| Carousel navigation | Not needed (all items in DOM) | Must click Next button repeatedly |
-| Container scoping | Post ID matched from URL | `<main>` element |
-| Profile picture exclusion | Skip first `img` | Not needed (boundary element filter) |
-| `<picture>` wrapper | Used for carousel images | Not used |
-
----
-
 ## Data Shape
 
 Each extracted media item has this shape:
