@@ -1278,32 +1278,47 @@ class XPlatform extends BasePlatform {
           newItemsFound++;
           log(`✓ Found NEW video ${videoMap.size}: videoId=${videoId} isHLS=${intercepted.isHLS}`);
         } else {
-          // Fallback: scan performance entries for a video.twimg.com URL matching this videoId
-          const perfFallback = videoId ? this._findXVideoUrlFromPerformance(videoId) : null;
-          if (perfFallback) {
-            videoMap.set(poster || String(videoMap.size), {
+          // Fallback: poster uses /media/ path without video ID. Match by thumbnail URL.
+          const thumbMatch = !videoId && poster ? this._findCachedVideoByThumbnail(poster) : null;
+          if (thumbMatch) {
+            videoMap.set(poster, {
               _type: 'video',
-              thumbnailUrl: poster || '',
-              fullSizeUrl: perfFallback.fullSizeUrl,
-              isHLS: perfFallback.isHLS,
-              videoId,
+              thumbnailUrl: poster,
+              fullSizeUrl: thumbMatch.fullSizeUrl,
+              isHLS: thumbMatch.isHLS || false,
+              videoId: thumbMatch.videoId,
               videoElement: video
             });
             newItemsFound++;
-            log(`✓ Found NEW video via performance fallback ${videoMap.size}: videoId=${videoId}`);
+            log(`✓ Found NEW video via thumbnail match ${videoMap.size}: videoId=${thumbMatch.videoId}`);
           } else {
-            // Last resort: mark with the tweet URL so yt-dlp can handle it
-            const tweetUrl = this._getTweetUrl();
-            log(`Video ${videoId} not found in cache or performance entries, using tweet URL fallback: ${tweetUrl}`);
-            videoMap.set(poster || String(videoMap.size), {
-              _type: 'video',
-              thumbnailUrl: poster || '',
-              fullSizeUrl: tweetUrl,
-              isHLS: true,
-              videoId: videoId || 'unknown',
-              videoElement: video
-            });
-            newItemsFound++;
+            // Fallback: scan performance entries for a video.twimg.com URL matching this videoId
+            const perfFallback = videoId ? this._findXVideoUrlFromPerformance(videoId) : null;
+            if (perfFallback) {
+              videoMap.set(poster || String(videoMap.size), {
+                _type: 'video',
+                thumbnailUrl: poster || '',
+                fullSizeUrl: perfFallback.fullSizeUrl,
+                isHLS: perfFallback.isHLS,
+                videoId,
+                videoElement: video
+              });
+              newItemsFound++;
+              log(`✓ Found NEW video via performance fallback ${videoMap.size}: videoId=${videoId}`);
+            } else {
+              // Last resort: mark with the tweet URL so yt-dlp can handle it
+              const tweetUrl = this._getTweetUrl();
+              log(`Video ${videoId} not found in cache or performance entries, using tweet URL fallback: ${tweetUrl}`);
+              videoMap.set(poster || String(videoMap.size), {
+                _type: 'video',
+                thumbnailUrl: poster || '',
+                fullSizeUrl: tweetUrl,
+                isHLS: true,
+                videoId: videoId || 'unknown',
+                videoElement: video
+              });
+              newItemsFound++;
+            }
           }
         }
       });
@@ -1388,6 +1403,16 @@ class XPlatform extends BasePlatform {
     });
 
     return orderedMedia;
+  }
+
+  _findCachedVideoByThumbnail(posterUrl) {
+    if (!posterUrl) return null;
+    for (const [id, data] of X_VIDEO_CACHE) {
+      if (data.thumbnailUrl === posterUrl) {
+        return { videoId: id, ...data };
+      }
+    }
+    return null;
   }
 
   _findXVideoUrlFromPerformance(videoId) {
@@ -1477,6 +1502,23 @@ class XPlatform extends BasePlatform {
           maxWidth: 0,
           mediaType: 'video'
         }];
+      }
+
+      // Fallback: poster uses /media/ path without video ID. Match by thumbnail URL.
+      if (!videoId && poster) {
+        const thumbMatch = this._findCachedVideoByThumbnail(poster);
+        if (thumbMatch) {
+          log(`✓ Got video URL from cache via thumbnail match: videoId=${thumbMatch.videoId}, isHLS=${thumbMatch.isHLS}`);
+          return [{
+            index: 1,
+            alt: 'Video',
+            thumbnailUrl: poster,
+            fullSizeUrl: thumbMatch.fullSizeUrl,
+            isHLS: thumbMatch.isHLS || false,
+            maxWidth: 0,
+            mediaType: 'video'
+          }];
+        }
       }
 
       const perfFallback = videoId ? this._findXVideoUrlFromPerformance(videoId) : null;
