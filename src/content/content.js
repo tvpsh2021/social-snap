@@ -69,7 +69,7 @@ const CAROUSEL = {
   FACEBOOK: {
     INITIAL_WAIT: 1000,
     WAIT_TIME: 1000,
-    MAX_ATTEMPTS: 100,
+    MAX_ATTEMPTS: 1000,
   },
   X: {
     INITIAL_WAIT: 500,
@@ -237,8 +237,13 @@ function wait(ms) {
 // === MESSAGE TYPES ===
 const CONTENT_MESSAGES = {
   IMAGES_EXTRACTED: 'imagesExtracted',
+  IMAGES_APPEND: 'imagesAppend',
+  EXTRACTION_COMPLETE: 'extractionComplete',
   EXTRACTION_ERROR: 'extractionError'
 };
+
+let stopFbExtractionRequested = false;
+let fbCarouselActive = false;
 
 // === BASE PLATFORM CLASS ===
 class BasePlatform {
@@ -759,6 +764,8 @@ class FacebookPlatform extends BasePlatform {
   }
 
   async navigateCarousel() {
+    stopFbExtractionRequested = false;
+    fbCarouselActive = true;
     log('Starting Facebook media navigation...');
 
     const collectedMedia = []; // { mediaType, fullSizeUrl, thumbnailUrl, alt, maxWidth, videoId? }
@@ -766,6 +773,13 @@ class FacebookPlatform extends BasePlatform {
     const collectedVideoIds = new Set(); // for video dedup
     let navigationCount = 0;
     const maxNavigations = CAROUSEL.FACEBOOK.MAX_ATTEMPTS;
+
+    const sendIncremental = () => {
+      chrome.runtime.sendMessage({
+        action: CONTENT_MESSAGES.IMAGES_APPEND,
+        images: [collectedMedia[collectedMedia.length - 1]]
+      });
+    };
 
     const extractFbImageId = (url) => {
       const match = url.match(/\/(\d+)_\d+/);
@@ -862,48 +876,60 @@ class FacebookPlatform extends BasePlatform {
       }
     };
 
-    // Collect initial media
-    log('Collecting initial Facebook media...');
-    if (this._isFbVideoPage()) {
-      await tryCollectVideo();
-    } else {
-      tryCollectImage();
-    }
-
-    // Navigate through the album
-    while (navigationCount < maxNavigations) {
-      const nextButton = this._findNavigationButton();
-      if (!nextButton) {
-        log('No navigation button found, stopping');
-        break;
-      }
-
-      log(`Navigation attempt ${navigationCount + 1}: Clicking Next button`);
-      try {
-        nextButton.click();
-      } catch {
-        const parentButton = nextButton.closest('button');
-        if (parentButton) parentButton.click();
-      }
-
-      await wait(CAROUSEL.FACEBOOK.WAIT_TIME);
-
-      let result;
+    try {
+      // Collect initial media
+      log('Collecting initial Facebook media...');
       if (this._isFbVideoPage()) {
-        result = await tryCollectVideo();
+        const r = await tryCollectVideo();
+        if (r === 'new') sendIncremental();
       } else {
-        result = tryCollectImage();
+        const r = tryCollectImage();
+        if (r === 'new') sendIncremental();
       }
 
-      if (result === 'duplicate') {
-        log('Found duplicate media, album navigation complete');
-        break;
+      // Navigate through the album
+      while (!stopFbExtractionRequested && navigationCount < maxNavigations) {
+        const nextButton = this._findNavigationButton();
+        if (!nextButton) {
+          log('No navigation button found, stopping');
+          break;
+        }
+
+        log(`Navigation attempt ${navigationCount + 1}: Clicking Next button`);
+        try {
+          nextButton.click();
+        } catch {
+          const parentButton = nextButton.closest('button');
+          if (parentButton) parentButton.click();
+        }
+
+        await wait(CAROUSEL.FACEBOOK.WAIT_TIME);
+
+        let result;
+        if (this._isFbVideoPage()) {
+          result = await tryCollectVideo();
+        } else {
+          result = tryCollectImage();
+        }
+
+        if (result === 'new') sendIncremental();
+
+        if (result === 'duplicate') {
+          log('Found duplicate media, album navigation complete');
+          break;
+        }
+
+        navigationCount++;
       }
 
-      navigationCount++;
+      if (stopFbExtractionRequested) {
+        log('Extraction stopped by user');
+      }
+    } finally {
+      log(`Facebook navigation completed. Total media collected: ${collectedMedia.length}`);
+      chrome.runtime.sendMessage({ action: CONTENT_MESSAGES.EXTRACTION_COMPLETE });
     }
 
-    log(`Facebook navigation completed. Total media collected: ${collectedMedia.length}`);
     return collectedMedia;
   }
 
@@ -1791,9 +1817,18 @@ async function extractImages() {
   }
 }
 
+// === STOP SIGNAL LISTENER ===
+chrome.runtime.onMessage.addListener((request) => {
+  if (request.action === 'stopExtraction') {
+    stopFbExtractionRequested = true;
+  }
+});
+
 // === AUTO EXTRACTION ===
 window.addEventListener('load', () => {
   setTimeout(async () => {
+    fbCarouselActive = false;
+    const isFacebook = window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK]);
     try {
       log('=== Social Media Image Downloader Auto-Extraction ===');
       log('Current URL:', window.location.href);
@@ -1802,18 +1837,26 @@ window.addEventListener('load', () => {
       const images = await extractImages();
       log('Auto-extraction completed successfully:', images);
 
-      chrome.runtime.sendMessage({
-        action: CONTENT_MESSAGES.IMAGES_EXTRACTED,
-        images,
-        count: images.length
-      });
+      // For Facebook carousel, navigateCarousel() already sent incremental messages + EXTRACTION_COMPLETE.
+      // For other Facebook paths (reel, direct video, static image), send IMAGES_EXTRACTED normally.
+      if (!(isFacebook && fbCarouselActive)) {
+        chrome.runtime.sendMessage({
+          action: CONTENT_MESSAGES.IMAGES_EXTRACTED,
+          images,
+          count: images.length
+        });
+      }
     } catch (error) {
       logError('Auto-extraction error:', error);
-      chrome.runtime.sendMessage({
-        action: CONTENT_MESSAGES.EXTRACTION_ERROR,
-        error: error.message,
-        count: 0
-      });
+      // For Facebook carousel errors, EXTRACTION_COMPLETE was already sent in navigateCarousel()'s finally block.
+      // Sending EXTRACTION_ERROR would wipe partial data from storage, so skip it.
+      if (!(isFacebook && fbCarouselActive)) {
+        chrome.runtime.sendMessage({
+          action: CONTENT_MESSAGES.EXTRACTION_ERROR,
+          error: error.message,
+          count: 0
+        });
+      }
     }
   }, GENERAL_CONFIG.ON_LOAD_WAIT);
 

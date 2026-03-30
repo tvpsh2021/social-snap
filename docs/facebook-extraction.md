@@ -18,25 +18,40 @@ Facebook extraction uses two components working together:
 | Component | Location | Purpose |
 |---|---|---|
 | `content.js` (FacebookPlatform) | Content script (Isolated world) | DOM interaction, carousel navigation, DASH manifest parsing |
-| `background.js` (webRequest listener) | Background service worker | Passively collects MP4 URLs from `*.fbcdn.net` network requests |
+| `background.js` (webRequest listener) | Background service worker | Passively collects MP4 URLs from `*.fbcdn.net` network requests; manages per-tab storage |
+
+### Data Storage
+
+Extracted media is stored in `chrome.storage.session` (keyed by tab ID). This survives MV3 service worker restarts within the same browser session, so switching tabs and returning will not lose data.
 
 ### Communication Flow
 
+**Carousel (incremental delivery):**
+
 ```
-chrome.webRequest.onBeforeRequest (background.js)
-    | passively collects .mp4 URLs with efg metadata
+content.js - navigateCarousel()
+    | sends imagesAppend per item as it is collected
     v
-fbVideoUrls Map (background.js)  videoId -> { url, bitrate }
-    ^
-    | content script queries via chrome.runtime.sendMessage
-    |
-content.js - FacebookPlatform
-    | extractImages()
+background.js - appendImages() to chrome.storage.session
+    | re-broadcasts imagesAppend to popup
     v
-background.js - stores media per tab
-    |
+popup.js - appends items to grid in real time, shows progress banner
+
+content.js - sends extractionComplete when navigation ends
     v
-popup.js - displays grid, triggers downloads
+background.js - removes tab from extractingTabs, broadcasts extractionComplete
+    v
+popup.js - hides progress banner
+```
+
+**Non-carousel paths (reel, direct video, static image):**
+
+```
+content.js - extractImages() returns full array
+    v
+background.js - storeImages() to chrome.storage.session (via imagesExtracted)
+    v
+popup.js - queries getCurrentImages on open, displays grid
 ```
 
 ---
@@ -48,19 +63,26 @@ extractImages()
   |
   +-- isReelPage? (/reel/ in URL)
   |     YES --> _extractReelVideo()
+  |               sends imagesExtracted (standard path)
   |
   +-- isVideoPage? (/videos/pcb.xxx/videoId in URL)
   |     YES --> _fetchVideoUrlFromBackground(videoId)
+  |               sends imagesExtracted (standard path)
   |
   +-- isPhotoPage? (/photo in path or fbid= in query)
   |     |
   |     +-- navigation button found?
   |     |     YES --> navigateCarousel()
+  |     |               sends imagesAppend per item (incremental)
+  |     |               sends extractionComplete when done
   |     |     NO  --> static single image detection
+  |     |               sends imagesExtracted (standard path)
   |     |
   |
   +-- none of the above --> return []
 ```
+
+The flag `fbCarouselActive` is set to `true` at the start of `navigateCarousel()` and reset to `false` at the start of each auto-extraction run. The auto-extraction block uses this flag to decide whether to send `imagesExtracted` — it is skipped only for carousel runs, since carousel already handles its own messaging.
 
 ---
 
@@ -87,9 +109,17 @@ Facebook renders one photo at a time in the album viewer. The extension clicks t
 
 `navigateCarousel()` clicks `div[data-visualcompletion="ignore-dynamic"]:nth-of-type(2) .html-div` to advance. Configuration:
 
-- Max attempts: 100
+- Max attempts: 1000 (safety ceiling; normal termination is duplicate detection or no Next button)
 - Wait between slides: 1000ms
-- Stops when: no Next button found, or duplicate image detected
+- Stops when: no Next button found, duplicate image detected, or user clicks Stop
+
+### Incremental delivery
+
+Each media item is sent to the background as soon as it is collected (`imagesAppend`). If extraction fails mid-way or the user stops it, all items collected so far are preserved in storage and visible in the popup.
+
+### Stop signal
+
+The popup sends `stopExtraction` directly to the content script via `chrome.tabs.sendMessage`. The carousel's `while` loop checks the `stopFbExtractionRequested` flag on each iteration and exits early.
 
 ### Image deduplication
 
@@ -194,3 +224,9 @@ Each extracted media item has this shape:
   mediaType: String     // 'image' or 'video'
 }
 ```
+
+---
+
+## Known Limitations
+
+- `extractingTabs` is stored in service worker memory. If the service worker is killed and restarts mid-extraction, the popup will no longer show the progress banner when reopened (it will report `extracting: false`). The extraction in the content script continues uninterrupted, and all collected items are still written to `chrome.storage.session`. Closing and reopening the popup after extraction completes shows the full result.

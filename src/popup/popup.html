@@ -381,6 +381,43 @@
         color: var(--color-text-secondary);
       }
 
+      /* ── Extraction progress ─────────────────────── */
+      #extraction-progress {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--color-border);
+        font-size: 12px;
+        color: var(--color-text-faint);
+      }
+
+      #extraction-count-text {
+        flex: 1;
+      }
+
+      .stop-btn {
+        background: transparent;
+        border: 1px solid rgba(200,80,80,0.3);
+        border-radius: 6px;
+        color: #d47070;
+        font-family: 'DM Sans', sans-serif;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 3px 10px;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+        flex-shrink: 0;
+      }
+      .stop-btn:hover:not(:disabled) {
+        background: rgba(200,80,80,0.08);
+        border-color: rgba(200,80,80,0.5);
+      }
+      .stop-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
       /* ── HLS section ─────────────────────────────── */
       .hls-section {
         margin: 0 10px 12px;
@@ -518,6 +555,12 @@
 
     <!-- Main content -->
     <div id="content">
+      <!-- Shown during Facebook carousel extraction -->
+      <div id="extraction-progress" style="display:none">
+        <div class="spin-ring"></div>
+        <span id="extraction-count-text">Extracting...</span>
+        <button id="stop-extraction-btn" class="stop-btn">Stop</button>
+      </div>
       <div id="images-grid" class="images-grid"></div>
       <div class="download-buttons">
         <button id="download-all-btn" class="download-btn download-btn-all" style="display:none">Download All</button>

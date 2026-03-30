@@ -96,11 +96,30 @@ class ImageGrid {
       this.imagesGridEl.appendChild(imageItem);
     });
 
+    this._updateDownloadButtons();
+
+    const hlsVideos = images.filter(i => i.mediaType === 'video' && i.isHLS);
+    this._renderHlsSection(hlsVideos);
+  }
+
+  appendImages(newImages) {
+    const startIndex = this.currentImages.length;
+    this.currentImages.push(...newImages);
+
+    newImages.forEach((image, i) => {
+      const imageItem = this._createImageItem(image, startIndex + i);
+      this.imagesGridEl.appendChild(imageItem);
+    });
+
+    this._updateDownloadButtons();
+  }
+
+  _updateDownloadButtons() {
+    const images = this.currentImages;
     const imageCount = images.filter(i => i.mediaType !== 'video').length;
     const directVideoCount = images.filter(i => i.mediaType === 'video' && !i.isHLS).length;
     const hlsVideos = images.filter(i => i.mediaType === 'video' && i.isHLS);
 
-    // "Download All" counts only directly downloadable items
     const downloadableCount = imageCount + directVideoCount;
     if (downloadableCount > 0) {
       this.downloadAllBtnEl.style.display = '';
@@ -123,7 +142,9 @@ class ImageGrid {
       this.downloadVideosBtnEl.style.display = 'none';
     }
 
-    this._renderHlsSection(hlsVideos);
+    if (hlsVideos.length > 0) {
+      this._renderHlsSection(hlsVideos);
+    }
   }
 
   _renderHlsSection(hlsVideos) {
@@ -345,9 +366,71 @@ class PopupController {
     this.statusDisplay = new StatusDisplay();
     this.imageGrid = new ImageGrid();
     this.currentTab = null;
+    this._extracting = false;
 
+    this._setupMessageListener();
     this._initializeEventListeners();
     this.init();
+  }
+
+  _setupMessageListener() {
+    chrome.runtime.onMessage.addListener((request) => {
+      if (!this.currentTab) return;
+
+      if (request.action === 'imagesAppend' && request.tabId === this.currentTab.id) {
+        this._onImagesAppend(request.images);
+      } else if (request.action === 'extractionComplete' && request.tabId === this.currentTab.id) {
+        this._onExtractionComplete();
+      }
+    });
+  }
+
+  _onImagesAppend(newImages) {
+    if (!this._extracting) return;
+
+    if (this.imageGrid.currentImages.length === 0) {
+      // First items arrived — transition from loading skeleton to content
+      this.statusDisplay.showContent();
+      this._showExtractionProgress();
+    }
+
+    this.imageGrid.appendImages(newImages);
+    this.statusDisplay.updateImageCount(this.imageGrid.currentImages);
+    this._updateExtractionCountText();
+  }
+
+  _onExtractionComplete() {
+    this._extracting = false;
+    const progressEl = document.getElementById('extraction-progress');
+    if (progressEl) progressEl.style.display = 'none';
+
+    if (this.imageGrid.currentImages.length === 0) {
+      this.statusDisplay.showError();
+    }
+  }
+
+  _showExtractionProgress() {
+    const progressEl = document.getElementById('extraction-progress');
+    if (progressEl) progressEl.style.display = 'flex';
+
+    this._updateExtractionCountText();
+
+    const stopBtn = document.getElementById('stop-extraction-btn');
+    if (stopBtn) {
+      stopBtn.onclick = async () => {
+        stopBtn.disabled = true;
+        stopBtn.textContent = 'Stopping...';
+        await chrome.tabs.sendMessage(this.currentTab.id, { action: 'stopExtraction' }).catch(() => {});
+      };
+    }
+  }
+
+  _updateExtractionCountText() {
+    const textEl = document.getElementById('extraction-count-text');
+    if (textEl) {
+      const count = this.imageGrid.currentImages.length;
+      textEl.textContent = `Extracting... (${count} found)`;
+    }
   }
 
   async init() {
@@ -357,30 +440,33 @@ class PopupController {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       this.currentTab = tab;
 
-      // The content script now runs automatically on page load.
-      // The popup's only job is to query the background script for the result.
       const response = await chrome.runtime.sendMessage({
         action: POPUP_MESSAGES.GET_CURRENT_IMAGES,
         tabId: this.currentTab.id
       });
 
-      // If images are found (or an empty array from a failed/no-image extraction), display the result.
-      if (response && response.images) {
+      if (response && Array.isArray(response.images)) {
+        this._extracting = response.extracting || false;
+
         if (response.images.length > 0) {
           this._displayImages(response.images);
+          if (this._extracting) {
+            this._showExtractionProgress();
+          }
+        } else if (this._extracting) {
+          // Extraction started but no images yet — keep loading skeleton, wait for first imagesAppend
+          const loadingTextEl = document.querySelector('.loading-text');
+          if (loadingTextEl) loadingTextEl.textContent = 'Extracting Facebook post...';
         } else {
-          // This handles cases where auto-extraction ran but found no images,
-          // or the page is unsupported.
           this.statusDisplay.showError();
         }
       } else {
-        // This handles errors or if the background script isn't ready.
         console.error('Invalid response from background script.');
         this.statusDisplay.showError('Failed to get images. Please reload the page and try again.');
       }
     } catch (err) {
       console.error('Popup initialization failed:', err);
-      if (err.message.includes('Receiving end does not exist')) {
+      if (err.message && err.message.includes('Receiving end does not exist')) {
         this.statusDisplay.showError('This page may not be supported or needs to be reloaded.');
       } else {
         this.statusDisplay.showError('An unexpected error occurred.');

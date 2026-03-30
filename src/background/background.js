@@ -34,6 +34,8 @@ function getFileExtension(url) {
 // === MESSAGE TYPES ===
 const CONTENT_MESSAGES = {
   IMAGES_EXTRACTED: 'imagesExtracted',
+  IMAGES_APPEND: 'imagesAppend',
+  EXTRACTION_COMPLETE: 'extractionComplete',
   EXTRACTION_ERROR: 'extractionError'
 };
 
@@ -49,24 +51,25 @@ const BACKGROUND_MESSAGES = {
 
 // === DATA MANAGER ===
 class DataManager {
-  constructor() {
-    this.tabImages = {}; // Use an object to store images per tabId
+  async storeImages(tabId, images) {
+    await chrome.storage.session.set({ [String(tabId)]: images });
   }
 
-  storeImages(tabId, images) {
-    this.tabImages[tabId] = images;
-    console.log(`Stored ${images.length} images for tab ${tabId}`);
+  async appendImages(tabId, newImages) {
+    const key = String(tabId);
+    const result = await chrome.storage.session.get(key);
+    const existing = result[key] || [];
+    await chrome.storage.session.set({ [key]: [...existing, ...newImages] });
   }
 
-  getStoredImages(tabId) {
-    return this.tabImages[tabId] || [];
+  async getStoredImages(tabId) {
+    const key = String(tabId);
+    const result = await chrome.storage.session.get(key);
+    return result[key] || [];
   }
 
-  clearTabData(tabId) {
-    if (this.tabImages[tabId]) {
-      delete this.tabImages[tabId];
-      console.log(`Cleared image data for closed tab ${tabId}`);
-    }
+  async clearTabData(tabId) {
+    await chrome.storage.session.remove(String(tabId));
   }
 }
 
@@ -152,6 +155,10 @@ class DownloadManager {
 const dataManager = new DataManager();
 const downloadManager = new DownloadManager();
 
+// In-memory set tracking tabs with ongoing extractions.
+// Best-effort: cleared if service worker is killed and restarts.
+const extractingTabs = new Set();
+
 // === FACEBOOK VIDEO URL COLLECTOR ===
 // Passively collects Facebook video MP4 URLs via webRequest.
 // Each URL's `efg` query param contains base64 JSON with video_id and bitrate,
@@ -205,12 +212,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle messages from content scripts
   if (sender.tab) {
     if (request.action === CONTENT_MESSAGES.IMAGES_EXTRACTED) {
-      dataManager.storeImages(sender.tab.id, request.images);
-      return; // No response needed
-    } else if (request.action === CONTENT_MESSAGES.EXTRACTION_ERROR) {
-      console.error(`Content script error in tab ${sender.tab.id}:`, request.error);
-      dataManager.storeImages(sender.tab.id, []); // Clear images on error
-      return; // No response needed
+      (async () => {
+        await dataManager.storeImages(sender.tab.id, request.images);
+        extractingTabs.delete(sender.tab.id);
+      })();
+      return;
+    }
+
+    if (request.action === CONTENT_MESSAGES.IMAGES_APPEND) {
+      (async () => {
+        await dataManager.appendImages(sender.tab.id, request.images);
+        extractingTabs.add(sender.tab.id);
+        chrome.runtime.sendMessage({
+          action: CONTENT_MESSAGES.IMAGES_APPEND,
+          images: request.images,
+          tabId: sender.tab.id
+        }).catch(() => {});
+      })();
+      return;
+    }
+
+    if (request.action === CONTENT_MESSAGES.EXTRACTION_COMPLETE) {
+      (async () => {
+        extractingTabs.delete(sender.tab.id);
+        chrome.runtime.sendMessage({
+          action: CONTENT_MESSAGES.EXTRACTION_COMPLETE,
+          tabId: sender.tab.id
+        }).catch(() => {});
+      })();
+      return;
+    }
+
+    if (request.action === CONTENT_MESSAGES.EXTRACTION_ERROR) {
+      (async () => {
+        console.error(`Content script error in tab ${sender.tab.id}:`, request.error);
+        await dataManager.storeImages(sender.tab.id, []);
+        extractingTabs.delete(sender.tab.id);
+      })();
+      return;
     }
   }
 
@@ -218,8 +257,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.action) {
   case POPUP_MESSAGES.GET_CURRENT_IMAGES:
     if (request.tabId) {
-      const images = dataManager.getStoredImages(request.tabId);
-      sendResponse({ images });
+      (async () => {
+        const images = await dataManager.getStoredImages(request.tabId);
+        const extracting = extractingTabs.has(request.tabId);
+        sendResponse({ images, extracting });
+      })();
+      return true; // Keep channel open for async sendResponse
     }
     break;
 
@@ -230,7 +273,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('Download all images failed:', error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Indicates async response
+    return true;
 
   case BACKGROUND_MESSAGES.DOWNLOAD_SINGLE_IMAGE:
     downloadManager.downloadSingleImage(request.image, request.index)
@@ -239,7 +282,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('Download single image failed:', error);
         sendResponse({ success: false, error: error.message });
       });
-    return true; // Indicates async response
+    return true;
 
   case BACKGROUND_MESSAGES.FETCH_FB_VIDEO_URL: {
     const cached = fbVideoUrls.get(request.videoId);
@@ -256,5 +299,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // === TAB MANAGEMENT ===
 // Clean up data when a tab is closed to prevent memory leaks
 chrome.tabs.onRemoved.addListener((tabId) => {
+  extractingTabs.delete(tabId);
   dataManager.clearTabData(tabId);
 });
