@@ -32,7 +32,8 @@ const SINGLE_POST_PATTERNS = {
   [PLATFORMS.FACEBOOK]: [
     /^https:\/\/www\.facebook\.com\/photo\/\?fbid=/,        // /photo/?fbid=photoId
     /^https:\/\/www\.facebook\.com\/[^/]+\/photos\//,       // /username/photos/photoId
-    /^https:\/\/www\.facebook\.com\/reel\/\d+/              // /reel/reelId
+    /^https:\/\/www\.facebook\.com\/reel\/\d+/,             // /reel/reelId
+    /^https:\/\/www\.facebook\.com\/\d+\/videos\/pcb\.\d+\/\d+/  // /userId/videos/pcb.xxx/videoId
   ],
   [PLATFORMS.X]: [
     /^https:\/\/x\.com\/[^/]+\/status\/[^/]+\/photo\/\d+/,  // /username/status/statusId/photo/number
@@ -758,164 +759,185 @@ class FacebookPlatform extends BasePlatform {
   }
 
   async navigateCarousel() {
-    log('Starting Facebook photo navigation to load all images...');
+    log('Starting Facebook media navigation...');
 
-    const collectedImages = [];
+    const collectedMedia = []; // { mediaType, fullSizeUrl, thumbnailUrl, alt, maxWidth, videoId? }
+    const collectedImageIds = new Set(); // for image dedup
+    const collectedVideoIds = new Set(); // for video dedup
     let navigationCount = 0;
     const maxNavigations = CAROUSEL.FACEBOOK.MAX_ATTEMPTS;
 
-    // Enhanced image detection function
-    const takeImageSnapshot = () => {
+    const extractFbImageId = (url) => {
+      const match = url.match(/\/(\d+)_\d+/);
+      return match ? match[1] : null;
+    };
+
+    const tryCollectImage = () => {
       log('Taking Facebook image snapshot...');
-
-      // Try multiple selectors to find the main image
       const possibleSelectors = SELECTORS.FACEBOOK.POST_IMAGES;
-
       let foundImage = null;
 
       for (const selector of possibleSelectors) {
         const images = document.querySelectorAll(selector);
-        log(`Trying selector "${selector}": found ${images.length} images`);
-
         for (const img of images) {
           const rect = img.getBoundingClientRect();
-          log(`Image: ${img.src.substring(0, 50)}... Size: ${rect.width}x${rect.height}`);
-
-          if (rect.width > IMAGE_FILTERS.MIN_WIDTH &&
-              rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
-              !img.src.includes('profile') &&
-              !img.src.includes('icon') &&
-              !img.src.includes('static') &&
-              rect.width > 200) { // Facebook photos are usually larger
-
-            // Found a potential main image
+          if (rect.width > 200 && rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
+              !img.src.includes('profile') && !img.src.includes('icon') && !img.src.includes('static')) {
             foundImage = img;
-            log('Found potential main image:', img.src.substring(0, 80));
             break;
           }
         }
-
         if (foundImage) break;
       }
 
       if (!foundImage) {
         log('No suitable main image found');
-        return false;
+        return 'none';
       }
 
-      const rect = foundImage.getBoundingClientRect();
+      const fbId = extractFbImageId(foundImage.src);
+      const isDuplicate = collectedImageIds.has(foundImage.src)
+        || collectedImageIds.has(foundImage.currentSrc)
+        || (fbId && collectedImageIds.has(fbId));
 
-      // Create a comprehensive image data object
-      const imageData = {
-        src: foundImage.src,
-        alt: foundImage.alt || 'Facebook image',
-        width: rect.width,
-        height: rect.height,
-        currentSrc: foundImage.currentSrc || foundImage.src,
-        naturalWidth: foundImage.naturalWidth,
-        naturalHeight: foundImage.naturalHeight,
-        element: foundImage,
-        timestamp: Date.now()
-      };
+      if (isDuplicate) {
+        log('Duplicate image detected');
+        return 'duplicate';
+      }
 
-      // More precise duplicate detection
-      const isDuplicate = collectedImages.some(existing => {
-        // Extract image ID from Facebook URL for more precise comparison
-        const extractImageId = (url) => {
-          const match = url.match(/\/(\d+)_\d+/);
-          return match ? match[1] : null;
-        };
+      collectedImageIds.add(foundImage.src);
+      if (foundImage.currentSrc) collectedImageIds.add(foundImage.currentSrc);
+      if (fbId) collectedImageIds.add(fbId);
 
-        const existingId = extractImageId(existing.src);
-        const newId = extractImageId(imageData.src);
+      collectedMedia.push(this.createImageData(foundImage, collectedMedia.length));
+      log(`✓ Collected image ${collectedMedia.length}: ${foundImage.src.substring(0, 60)}`);
+      return 'new';
+    };
 
-        // Compare multiple attributes
-        const srcMatch = existing.src === imageData.src;
-        const currentSrcMatch = existing.currentSrc === imageData.currentSrc;
-        const idMatch = existingId && newId && existingId === newId;
-        const exactSizeMatch = existing.naturalWidth === imageData.naturalWidth &&
-                              existing.naturalHeight === imageData.naturalHeight &&
-                              existing.alt === imageData.alt;
+    const tryCollectVideo = async () => {
+      const videoId = this._extractVideoIdFromUrl();
+      if (!videoId) return 'none';
+      if (collectedVideoIds.has(videoId)) {
+        log('Duplicate video detected');
+        return 'duplicate';
+      }
 
-        log('Comparing with existing image:', {
-          srcMatch,
-          currentSrcMatch,
-          idMatch,
-          exactSizeMatch,
-          existingId,
-          newId,
-          existingSrc: existing.src.substring(0, 50),
-          newSrc: imageData.src.substring(0, 50)
+      log(`Video page detected, videoId: ${videoId}`);
+
+      // Trigger video playback so the browser fetches the MP4 segments.
+      // Facebook carousel videos don't autoplay; clicking the play button
+      // or calling video.play() starts the MSE download.
+      const video = document.querySelector('video');
+      if (video) {
+        try {
+          const playPromise = video.play();
+          if (playPromise) playPromise.catch(() => {});
+        } catch {
+          // Autoplay blocked; try clicking the play button
+        }
+      }
+      // Also try clicking the play button overlay
+      const playButton = document.querySelector('[aria-label*="再生"], [aria-label*="Play"]');
+      if (playButton) {
+        log('Clicking play button to trigger video load');
+        playButton.click();
+      }
+
+      try {
+        const videoUrl = await this._fetchVideoUrlFromBackground(videoId);
+        collectedVideoIds.add(videoId);
+        collectedMedia.push({
+          index: collectedMedia.length + 1,
+          alt: 'Video',
+          thumbnailUrl: '',
+          fullSizeUrl: videoUrl,
+          maxWidth: 0,
+          mediaType: 'video'
         });
-
-        // Only consider duplicate if:
-        // 1. Exact URL match, OR
-        // 2. Same Facebook image ID (most reliable for Facebook)
-        // Remove size+alt matching as it's too restrictive for Facebook albums
-        return srcMatch || currentSrcMatch || idMatch;
-      });
-
-      if (!isDuplicate) {
-        collectedImages.push(imageData);
-        log(`✓ Collected Facebook image ${collectedImages.length}:`, {
-          alt: imageData.alt.substring(0, 30),
-          src: imageData.src.substring(0, 60),
-          size: `${imageData.naturalWidth}x${imageData.naturalHeight}`,
-          rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`
-        });
-        return true;
-      } else {
-        log('Image already exists in collection, skipping');
-        return false;
+        log(`✓ Collected video ${collectedMedia.length}: videoId=${videoId}`);
+        return 'new';
+      } catch (error) {
+        logError(`Failed to fetch video URL for ${videoId}:`, error);
+        return 'none';
       }
     };
 
-    // Collect the first image
-    log('Collecting initial Facebook image...');
+    // Collect initial media
+    log('Collecting initial Facebook media...');
+    if (this._isFbVideoPage()) {
+      await tryCollectVideo();
+    } else {
+      tryCollectImage();
+    }
 
-    takeImageSnapshot();
-
-    // Navigate through the album until we find a duplicate image (full circle)
+    // Navigate through the album
     while (navigationCount < maxNavigations) {
       const nextButton = this._findNavigationButton();
-
       if (!nextButton) {
         log('No navigation button found, stopping');
         break;
       }
 
       log(`Navigation attempt ${navigationCount + 1}: Clicking Next button`);
-
-      // Try different click strategies
       try {
-        // Strategy 1: Direct click
         nextButton.click();
       } catch {
-        log('Direct click failed, trying parent button');
-        // Strategy 2: Click parent button
         const parentButton = nextButton.closest('button');
-        if (parentButton) {
-          parentButton.click();
-        }
+        if (parentButton) parentButton.click();
       }
 
       await wait(CAROUSEL.FACEBOOK.WAIT_TIME);
 
-      // Try to collect new image
-      const foundNewImage = takeImageSnapshot();
-
-      if (foundNewImage) {
-        log(`Successfully navigated to image ${collectedImages.length}`);
+      let result;
+      if (this._isFbVideoPage()) {
+        result = await tryCollectVideo();
       } else {
-        log('Found duplicate image, album navigation complete');
+        result = tryCollectImage();
+      }
+
+      if (result === 'duplicate') {
+        log('Found duplicate media, album navigation complete');
         break;
       }
 
       navigationCount++;
     }
 
-    log(`Facebook navigation completed. Total images collected: ${collectedImages.length}`);
-    return collectedImages.map(img => img.element);
+    log(`Facebook navigation completed. Total media collected: ${collectedMedia.length}`);
+    return collectedMedia;
+  }
+
+  _isFbVideoPage() {
+    return /\/videos\/pcb\.\d+\/\d+/.test(window.location.pathname);
+  }
+
+  _extractVideoIdFromUrl() {
+    const match = window.location.pathname.match(/\/videos\/pcb\.\d+\/(\d+)/);
+    return match ? match[1] : null;
+  }
+
+  async _fetchVideoUrlFromBackground(videoId) {
+    const query = () => new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { action: 'fetchFbVideoUrl', videoId },
+        (response) => {
+          if (chrome.runtime.lastError || !response?.success) {
+            resolve(null);
+          } else {
+            resolve(response.videoUrl);
+          }
+        }
+      );
+    });
+
+    // The video MP4 request may not have been made yet. Retry up to 5 times.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const url = await query();
+      if (url) return url;
+      log(`Video URL not yet available for ${videoId}, waiting... (attempt ${attempt + 1}/5)`);
+      await wait(1000);
+    }
+    throw new Error(`No video URL collected for videoId ${videoId}`);
   }
 
   _findNavigationButton() {
@@ -949,64 +971,77 @@ class FacebookPlatform extends BasePlatform {
       return this._extractReelVideo();
     }
 
+    const isVideoPage = this._isFbVideoPage();
+    if (isVideoPage) {
+      log('Facebook video page detected (carousel video direct navigation)');
+      const videoId = this._extractVideoIdFromUrl();
+      if (videoId) {
+        try {
+          const videoUrl = await this._fetchVideoUrlFromBackground(videoId);
+          return [{
+            index: 1,
+            alt: 'Video',
+            thumbnailUrl: '',
+            fullSizeUrl: videoUrl,
+            maxWidth: 0,
+            mediaType: 'video'
+          }];
+        } catch (error) {
+          logError('Failed to fetch video URL:', error);
+          return [];
+        }
+      }
+    }
+
     const isPhotoPage = window.location.pathname.includes('/photo') ||
                        window.location.search.includes('fbid=');
 
     if (!isPhotoPage) {
-      log('Not a Facebook photo/reel page, no media to extract');
+      log('Not a Facebook photo/reel/video page, no media to extract');
       return [];
     }
 
     log('Facebook photo page detected');
 
-    // Check if this is a multi-image album by looking for the specific text
-    const isMultiImageAlbum = document.body.textContent.includes('この写真は投稿で使用されています。');
-    log('Multi-image album detected:', isMultiImageAlbum);
+    // Check if this is a multi-image album by looking for navigation buttons
+    const navigationButton = this._findNavigationButton();
+    log('Navigation button found:', !!navigationButton);
 
-    let mainPostImages = [];
-
-    if (isMultiImageAlbum) {
-      // Check if this is part of an album with navigation buttons
-      const navigationButton = this._findNavigationButton();
-      log('Navigation button found:', !!navigationButton);
-
-      if (navigationButton) {
-        log('Multi-image album confirmed, using carousel navigation to load all images...');
-        try {
-          mainPostImages = await this.navigateCarousel();
-          log(`Carousel navigation completed, found ${mainPostImages.length} images`);
-        } catch (error) {
-          logError('Carousel navigation failed, falling back to static detection:', error);
-          mainPostImages = [];
+    if (navigationButton) {
+      log('Album with navigation detected, using carousel navigation...');
+      try {
+        // navigateCarousel() returns media data objects directly
+        const carouselMedia = await this.navigateCarousel();
+        if (carouselMedia.length > 0) {
+          log(`Carousel navigation completed, found ${carouselMedia.length} media items`);
+          return carouselMedia;
         }
-      } else {
-        log('Multi-image album detected but no navigation button found, using static detection');
+      } catch (error) {
+        logError('Carousel navigation failed, falling back to static detection:', error);
       }
-    } else {
-      log('Single image post detected, using static detection only (no navigation)');
     }
 
-    if (mainPostImages.length === 0) {
-      log('No main image found, trying alternative selectors...');
+    // Fallback: static single image detection
+    log('Using static image detection...');
+    let mainPostImages = [];
 
-      for (const selector of SELECTORS.FACEBOOK.POST_IMAGES) {
-        const images = document.querySelectorAll(selector);
-        log(`Trying selector "${selector}": found ${images.length} images`);
+    for (const selector of SELECTORS.FACEBOOK.POST_IMAGES) {
+      const images = document.querySelectorAll(selector);
+      log(`Trying selector "${selector}": found ${images.length} images`);
 
-        const validImages = Array.from(images).filter(img => {
-          const rect = img.getBoundingClientRect();
-          return rect.width > IMAGE_FILTERS.MIN_WIDTH &&
-                 rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
-                 !img.src.includes('profile') &&
-                 !img.src.includes('icon') &&
-                 !img.src.includes('emoji');
-        });
+      const validImages = Array.from(images).filter(img => {
+        const rect = img.getBoundingClientRect();
+        return rect.width > IMAGE_FILTERS.MIN_WIDTH &&
+               rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
+               !img.src.includes('profile') &&
+               !img.src.includes('icon') &&
+               !img.src.includes('emoji');
+      });
 
-        if (validImages.length > 0) {
-          log(`Found ${validImages.length} valid images with selector: ${selector}`);
-          mainPostImages = validImages;
-          break;
-        }
+      if (validImages.length > 0) {
+        log(`Found ${validImages.length} valid images with selector: ${selector}`);
+        mainPostImages = validImages;
+        break;
       }
     }
 

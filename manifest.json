@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "downloads",
-    "storage"
+    "storage",
+    "webRequest"
   ],
   "host_permissions": [
     "https://www.threads.com/*",
@@ -51,6 +52,7 @@
         "https://www.facebook.com/photo/*",
         "https://www.facebook.com/*/photos/*",
         "https://www.facebook.com/reel/*",
+        "https://www.facebook.com/*/videos/*",
         "https://x.com/*/status/*"
       ],
       "js": [

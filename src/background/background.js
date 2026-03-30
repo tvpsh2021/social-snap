@@ -43,7 +43,8 @@ const POPUP_MESSAGES = {
 
 const BACKGROUND_MESSAGES = {
   DOWNLOAD_IMAGES: 'downloadImages',
-  DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage'
+  DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage',
+  FETCH_FB_VIDEO_URL: 'fetchFbVideoUrl'
 };
 
 // === DATA MANAGER ===
@@ -151,6 +152,54 @@ class DownloadManager {
 const dataManager = new DataManager();
 const downloadManager = new DownloadManager();
 
+// === FACEBOOK VIDEO URL COLLECTOR ===
+// Passively collects Facebook video MP4 URLs via webRequest.
+// Each URL's `efg` query param contains base64 JSON with video_id and bitrate,
+// allowing precise filtering by video and quality selection.
+const fbVideoUrls = new Map(); // videoId -> { url, bitrate }
+
+function cleanFbVideoUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    urlObj.searchParams.delete('bytestart');
+    urlObj.searchParams.delete('byteend');
+    return urlObj.toString();
+  } catch {
+    return url;
+  }
+}
+
+function parseEfgParam(url) {
+  try {
+    const efg = new URL(url).searchParams.get('efg');
+    if (!efg) return null;
+    const decoded = JSON.parse(atob(decodeURIComponent(efg)));
+    return {
+      videoId: decoded.video_id ? String(decoded.video_id) : null,
+      bitrate: decoded.bitrate || 0
+    };
+  } catch {
+    return null;
+  }
+}
+
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (!details.url.includes('.mp4')) return;
+    const meta = parseEfgParam(details.url);
+    if (!meta || !meta.videoId) return;
+
+    const existing = fbVideoUrls.get(meta.videoId);
+    if (!existing || meta.bitrate > existing.bitrate) {
+      fbVideoUrls.set(meta.videoId, {
+        url: cleanFbVideoUrl(details.url),
+        bitrate: meta.bitrate
+      });
+    }
+  },
+  { urls: ['*://*.fbcdn.net/*'] }
+);
+
 // === MESSAGE LISTENERS ===
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle messages from content scripts
@@ -191,6 +240,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message });
       });
     return true; // Indicates async response
+
+  case BACKGROUND_MESSAGES.FETCH_FB_VIDEO_URL: {
+    const cached = fbVideoUrls.get(request.videoId);
+    if (cached) {
+      sendResponse({ success: true, videoUrl: cached.url });
+    } else {
+      sendResponse({ success: false, error: `No video URL found for videoId ${request.videoId}` });
+    }
+    break;
+  }
   }
 });
 
