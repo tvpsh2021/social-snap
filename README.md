@@ -4,13 +4,15 @@ A Chrome extension for downloading images and videos from social media posts. Su
 
 ## Features
 
-- Download all images from a post with one click
-- Thumbnail preview grid with image count
-- Click individual thumbnails to download single images
-- Automatically selects highest resolution from `srcset`
+- Download images and videos from a post with one click
+- Thumbnail preview grid with media count
+- Click individual thumbnails to download single items
+- Automatically selects highest resolution available
 - Auto-generates platform-specific filenames with timestamps
-- Filters out profile pictures and comment section images
-- Carousel/gallery navigation (auto-clicks through multi-image posts)
+- Filters out profile pictures and UI elements
+- Carousel/gallery navigation (auto-clicks through multi-media posts)
+
+See [docs/platform-comparison.md](./docs/platform-comparison.md) for a detailed breakdown of supported media types per platform.
 
 ## Installation
 
@@ -33,37 +35,43 @@ Files are saved to your default download location with names like `threads_image
 The extension only activates on individual post pages, not feeds or profile pages.
 
 **Threads**
-- `https://www.threads.com/@username/post/postId`
-- `https://www.threads.com/t/postId`
+- `threads.com/@username/post/postId`
+- `threads.com/t/postId`
 
 **Instagram**
-- `https://www.instagram.com/p/postId/`
-- `https://www.instagram.com/reel/reelId/`
+- `instagram.com/p/postId/`
+- `instagram.com/username/p/postId/`
+- `instagram.com/reel/reelId/`
 
 **Facebook**
-- `https://www.facebook.com/photo/?fbid=photoId`
-- `https://www.facebook.com/username/photos/photoId`
+- `facebook.com/photo/?fbid=photoId`
+- `facebook.com/username/photos/photoId`
+- `facebook.com/reel/reelId`
+- `facebook.com/userId/videos/pcb.xxx/videoId` (carousel video)
 
 **X.com**
-- `https://x.com/username/status/statusId/photo/1` (photo mode only)
+- `x.com/username/status/statusId` (video/GIF tweets)
+- `x.com/username/status/statusId/photo/N`
+- `x.com/username/status/statusId/video/N`
 
 ## Architecture
 
 ```
 src/
-  content/background.js   # Service worker — download management
-  content/content.js       # Content script — platform detection & media extraction
-  popup/popup.html         # Extension popup UI
-  popup/popup.js           # Popup controller
+  background/background.js        # Service worker: downloads, webRequest listener
+  content/content.js               # Content script: platform detection & media extraction
+  content/x-fetch-interceptor.js   # MAIN world script: X.com fetch/XHR interception
+  popup/popup.html                 # Extension popup UI
+  popup/popup.js                   # Popup controller
 ```
 
-Each platform has its own extraction logic inside `content.js`. Platform is detected from the current tab URL. The popup communicates with the content script via `chrome.tabs.sendMessage`, and the background worker handles all `chrome.downloads` calls.
+Each platform has its own extraction class inside `content.js`. Platform is detected from the current tab URL. The popup communicates with the background worker via `chrome.runtime.sendMessage`, and the background worker handles downloads and network request monitoring.
 
-Platform-specific notes:
-- **Threads**: Reads `<picture>` tags, filters images by DOM position to exclude comment section
-- **Instagram**: Auto-navigates carousel by clicking the Next button, handles lazy-loaded images
-- **Facebook**: Navigates photo albums, detects highest resolution variant
-- **X.com**: Handles photo mode carousel, scoped to dialog container
+For platform-specific extraction details, see the docs:
+- [Threads](./docs/threads-extraction.md)
+- [Instagram](./docs/instagram-extraction.md)
+- [Facebook](./docs/facebook-extraction.md)
+- [X.com](./docs/x-extraction.md)
 
 ## Development
 

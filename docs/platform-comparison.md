@@ -8,19 +8,19 @@ A side-by-side comparison of how each platform's media extraction works.
 |---|---|---|---|---|
 | Single photo | Yes | Yes | Yes | Yes |
 | Photo carousel | Yes | Yes | Yes | Yes |
-| Single video | Yes | Yes | No | Yes |
+| Single video | Yes | Yes | Yes (Reel) | Yes |
 | Multiple videos | No | Yes | No | Yes |
-| Mixed carousel (photos + videos) | Yes | Yes | No | Yes |
-| GIF (MP4) | N/A | N/A | No | Yes |
+| Mixed carousel (photos + videos) | Yes | Yes | Yes | Yes |
+| GIF (MP4) | N/A | N/A | N/A | Yes |
 | HLS video (yt-dlp fallback) | No | No | No | Yes |
 
 ## Video URL Resolution
 
 | Aspect | Instagram | Threads | Facebook | X.com |
 |---|---|---|---|---|
-| URL in DOM | Blob URL (MSE) | Direct CDN URL in `video.src` | N/A | Direct `src` for GIFs; no `src` for regular videos |
-| Resolution method | `performance.getEntriesByType('resource')` scanning for `.mp4` on `fbcdn.net`/`cdninstagram.com` | Read `video.src` directly | N/A | Fetch API interception (`video_info.variants` from GraphQL/REST responses) |
-| `video.play()` needed | Yes (`preload=none`) | No | N/A | No |
+| URL in DOM | Blob URL (MSE) | Direct CDN URL in `video.src` | Blob URL (MSE) for carousel videos; `<script>` tags contain DASH manifest for Reels | Direct `src` for GIFs; no `src` for regular videos |
+| Resolution method | `performance.getEntriesByType('resource')` scanning for `.mp4` on `fbcdn.net`/`cdninstagram.com` | Read `video.src` directly | Reel: DASH manifest parsing from SSR `<script>` tags. Carousel video: `chrome.webRequest.onBeforeRequest` passively collects `.mp4` URLs from `*.fbcdn.net`, parses `efg` query param (base64 JSON with `video_id` and `bitrate`) | Fetch API interception (`video_info.variants` from GraphQL/REST responses) |
+| `video.play()` needed | Yes (`preload=none`) | No | Yes (carousel videos need play trigger to start MSE download) | No |
 | GIF handling | N/A | N/A | N/A | Detect `tweet_video/` in `video.src`, download MP4 directly |
 | Fallback | None | None | None | Performance entries, then tweet URL for yt-dlp |
 
@@ -46,7 +46,7 @@ A side-by-side comparison of how each platform's media extraction works.
 | Aspect | Instagram | Threads | Facebook | X.com |
 |---|---|---|---|---|
 | Image dedup | `img.src` as map key | `img.src` as map key | src + currentSrc + Facebook image ID (`/\d+_\d+/` from URL) | `img.src` as map key |
-| Video dedup | Cleaned URL (strip `bytestart`/`byteend`) + `efg` asset ID | N/A (direct `src`) | N/A | `video.poster` URL or element reference |
+| Video dedup | Cleaned URL (strip `bytestart`/`byteend`) + `efg` asset ID | N/A (direct `src`) | `video_id` from `efg` param (base64 JSON) | `video.poster` URL or element reference |
 
 ## Minimum Image Size
 
@@ -61,6 +61,6 @@ A side-by-side comparison of how each platform's media extraction works.
 
 | Aspect | Instagram | Threads | Facebook | X.com |
 |---|---|---|---|---|
-| World | Isolated | Isolated | Isolated | Isolated + MAIN world (fetch interceptor) |
-| Async extraction | Yes (carousel navigation + `play()`) | No (synchronous) | Yes (carousel navigation) | Yes (carousel navigation + API interception) |
-| External script | None | None | None | `x-fetch-interceptor.js` patches `fetch` and `XMLHttpRequest` in MAIN world |
+| World | Isolated | Isolated | Isolated + Background service worker (`webRequest` listener) | Isolated + MAIN world (fetch interceptor) |
+| Async extraction | Yes (carousel navigation + `play()`) | No (synchronous) | Yes (carousel navigation + video URL collection via background) | Yes (carousel navigation + API interception) |
+| External script | None | None | None (`background.js` handles `webRequest`) | `x-fetch-interceptor.js` patches `fetch` and `XMLHttpRequest` in MAIN world |

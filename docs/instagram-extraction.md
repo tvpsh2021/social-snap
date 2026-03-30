@@ -91,10 +91,10 @@ The method clicks the "Next" button repeatedly, collecting media at each step, u
 
 At each navigation step, `collectCurrentlyVisibleMedia()` reads the current `<li>` children of the `<ul>`. The logic applies a positional rule:
 
-- If there are exactly 3 `<li>` elements and one has `translateX(0px)`, process `listItems[1]` (center item).
-- Always also process `listItems[2]`.
+- If there are 3 or more `<li>` elements and one has `translateX(0px)`, process `listItems[1]` (center item). Always also process `listItems[2]`.
+- If there are fewer than 3 `<li>` elements and one has `translateX(0px)`, process only that `translateX(0px)` item.
 
-This covers the sliding window Instagram uses, where 3 items are in the DOM at a time: previous, current, and next.
+The 3+ case covers the sliding window Instagram uses, where 3 items are in the DOM at a time: previous, current, and next. The fewer-than-3 case handles legacy posts (circa 2022) where a single image is wrapped in a `<ul>/<li>` structure with only 2 `<li>` elements.
 
 ### Photo items
 
