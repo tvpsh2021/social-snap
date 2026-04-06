@@ -1,53 +1,8 @@
 /**
  * Bundled background script for Social Media Image Downloader
+ * Shared constants and utilities are loaded via importScripts from src/shared/.
  */
-
-// === SHARED UTILS ===
-function getFileExtension(url) {
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-    const match = pathname.match(/\.(jpg|jpeg|png|gif|webp|mp4)$/i);
-    if (match) {
-      return match[1].toLowerCase();
-    }
-
-    const searchParams = urlObj.searchParams;
-    if (searchParams.has('format')) {
-      return searchParams.get('format');
-    }
-
-    if (url.includes('mp4')) return 'mp4';
-    if (url.includes('jpg') || url.includes('jpeg')) return 'jpg';
-    if (url.includes('png')) return 'png';
-    if (url.includes('webp')) return 'webp';
-    if (url.includes('gif')) return 'gif';
-
-    return 'jpg';
-  } catch (error) {
-    console.log('Unable to parse URL, using default extension jpg');
-    console.error(error);
-    return 'jpg';
-  }
-}
-
-// === MESSAGE TYPES ===
-const CONTENT_MESSAGES = {
-  IMAGES_EXTRACTED: 'imagesExtracted',
-  IMAGES_APPEND: 'imagesAppend',
-  EXTRACTION_COMPLETE: 'extractionComplete',
-  EXTRACTION_ERROR: 'extractionError'
-};
-
-const POPUP_MESSAGES = {
-  GET_CURRENT_IMAGES: 'getCurrentImages'
-};
-
-const BACKGROUND_MESSAGES = {
-  DOWNLOAD_IMAGES: 'downloadImages',
-  DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage',
-  FETCH_FB_VIDEO_URL: 'fetchFbVideoUrl'
-};
+importScripts('/src/shared/constants.js', '/src/shared/utils.js');
 
 // === DATA MANAGER ===
 class DataManager {
@@ -75,27 +30,18 @@ class DataManager {
 
 // === DOWNLOAD MANAGER ===
 class DownloadManager {
-  async downloadAllImages(images) {
-    // Detect platform from current tab
-    // ⚠️ IMPORTANT: When adding new platform support, remember to add platform detection here
-    // to avoid filenames becoming "unknown_xxxxx.jpg"
+  async _detectPlatform() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    let platformName = 'unknown';
+    return getPlatformFromUrl(tab.url) || 'unknown';
+  }
 
-    if (tab.url.includes('threads.com')) {
-      platformName = 'threads';
-    } else if (tab.url.includes('instagram.com')) {
-      platformName = 'instagram';
-    } else if (tab.url.includes('facebook.com')) {
-      platformName = 'facebook';
-    } else if (tab.url.includes('x.com')) {
-      platformName = 'x';
-    }
+  async downloadAllImages(images) {
+    const platformName = await this._detectPlatform();
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
 
     for (let i = 0; i < images.length; i++) {
       const image = images[i];
       try {
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
         const extension = getFileExtension(image.fullSizeUrl);
         const mediaType = image.mediaType === 'video' ? 'video' : 'image';
         const filename = `${platformName}_${mediaType}_${timestamp}_${i + 1}.${extension}`;
@@ -117,22 +63,7 @@ class DownloadManager {
 
   async downloadSingleImage(image, index) {
     try {
-      // Detect platform from current tab
-      // ⚠️ IMPORTANT: When adding new platform support, remember to add platform detection here
-      // to avoid filenames becoming "unknown_xxxxx.jpg"
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      let platformName = 'unknown';
-
-      if (tab.url.includes('threads.com')) {
-        platformName = 'threads';
-      } else if (tab.url.includes('instagram.com')) {
-        platformName = 'instagram';
-      } else if (tab.url.includes('facebook.com')) {
-        platformName = 'facebook';
-      } else if (tab.url.includes('x.com')) {
-        platformName = 'x';
-      }
-
+      const platformName = await this._detectPlatform();
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
       const extension = getFileExtension(image.fullSizeUrl);
       const mediaType = image.mediaType === 'video' ? 'video' : 'image';

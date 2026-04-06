@@ -1,22 +1,8 @@
 /**
  * Bundled content script for Social Media Image Downloader
- * This file combines all content script modules into a single file to avoid ES6 import issues
+ * Shared constants (PLATFORMS, PLATFORM_HOSTNAMES, message types) and utilities
+ * (getFileExtension, getPlatformFromUrl, wait) are loaded from src/shared/ via manifest.
  */
-
-// === SHARED CONSTANTS ===
-const PLATFORMS = {
-  THREADS: 'threads',
-  INSTAGRAM: 'instagram',
-  FACEBOOK: 'facebook',
-  X: 'x'
-};
-
-const PLATFORM_HOSTNAMES = {
-  [PLATFORMS.THREADS]: 'threads.com',
-  [PLATFORMS.INSTAGRAM]: 'instagram.com',
-  [PLATFORMS.FACEBOOK]: 'facebook.com',
-  [PLATFORMS.X]: 'x.com'
-};
 
 // URL patterns for single posts (exclude homepage/main feeds)
 const SINGLE_POST_PATTERNS = {
@@ -183,64 +169,8 @@ function isValidPostUrl(url) {
   return isSinglePost(url) && !isHomepage(url);
 }
 
-function getPlatformFromUrl(url) {
-  if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.THREADS])) {
-    return PLATFORMS.THREADS;
-  } else if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.INSTAGRAM])) {
-    return PLATFORMS.INSTAGRAM;
-  } else if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK])) {
-    return PLATFORMS.FACEBOOK;
-  } else if (url.includes(PLATFORM_HOSTNAMES[PLATFORMS.X])) {
-    return PLATFORMS.X;
-  }
-  return null;
-}
-
-// === SHARED UTILS ===
-function getFileExtension(url) {
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-    const match = pathname.match(/\.(jpg|jpeg|png|gif|webp|mp4)$/i);
-    if (match) {
-      return match[1].toLowerCase();
-    }
-
-    const searchParams = urlObj.searchParams;
-    if (searchParams.has('format')) {
-      return searchParams.get('format');
-    }
-
-    if (url.includes('mp4')) return 'mp4';
-    if (url.includes('jpg') || url.includes('jpeg')) return 'jpg';
-    if (url.includes('png')) return 'png';
-    if (url.includes('webp')) return 'webp';
-    if (url.includes('gif')) return 'gif';
-
-    return 'jpg';
-  } catch {
-    log('Unable to parse URL, using default extension jpg');
-    return 'jpg';
-  }
-}
-
-function generateFilename(platformName, index, url) {
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
-  const extension = getFileExtension(url);
-  return `${platformName}_image_${timestamp}_${index}.${extension}`;
-}
-
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// === MESSAGE TYPES ===
-const CONTENT_MESSAGES = {
-  IMAGES_EXTRACTED: 'imagesExtracted',
-  IMAGES_APPEND: 'imagesAppend',
-  EXTRACTION_COMPLETE: 'extractionComplete',
-  EXTRACTION_ERROR: 'extractionError'
-};
+// getPlatformFromUrl, getFileExtension, wait: provided by src/shared/utils.js
+// CONTENT_MESSAGES: provided by src/shared/constants.js
 
 let stopFbExtractionRequested = false;
 let fbCarouselActive = false;
@@ -257,10 +187,6 @@ class BasePlatform {
 
   extractImages() {
     return [];
-  }
-
-  generateFilename(index, url) {
-    return generateFilename(this.platformName, index, url);
   }
 
   createImageData(img, index) {

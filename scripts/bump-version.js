@@ -34,7 +34,7 @@ function writeJson(filePath, data) {
 const bumpType = process.argv[2];
 
 if (!BUMP_TYPES.includes(bumpType)) {
-  console.error(`Usage: node scripts/bump-version.js <major|minor|patch>`);
+  console.error('Usage: node scripts/bump-version.js <major|minor|patch>');
   process.exit(1);
 }
 

@@ -1,17 +1,8 @@
 /**
  * Bundled popup script for Social Media Image Downloader
+ * Shared constants (POPUP_MESSAGES, BACKGROUND_MESSAGES, CONTENT_MESSAGES) and utilities
+ * are loaded from src/shared/ via script tags in popup.html.
  */
-
-// === MESSAGE TYPES ===
-const POPUP_MESSAGES = {
-  EXTRACT_IMAGES: 'extractImages',
-  GET_CURRENT_IMAGES: 'getCurrentImages'
-};
-
-const BACKGROUND_MESSAGES = {
-  DOWNLOAD_IMAGES: 'downloadImages',
-  DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage'
-};
 
 // === STATUS DISPLAY COMPONENT ===
 class StatusDisplay {
@@ -377,9 +368,9 @@ class PopupController {
     chrome.runtime.onMessage.addListener((request) => {
       if (!this.currentTab) return;
 
-      if (request.action === 'imagesAppend' && request.tabId === this.currentTab.id) {
+      if (request.action === CONTENT_MESSAGES.IMAGES_APPEND && request.tabId === this.currentTab.id) {
         this._onImagesAppend(request.images);
-      } else if (request.action === 'extractionComplete' && request.tabId === this.currentTab.id) {
+      } else if (request.action === CONTENT_MESSAGES.EXTRACTION_COMPLETE && request.tabId === this.currentTab.id) {
         this._onExtractionComplete();
       }
     });

@@ -64,3 +64,6 @@ logs
 # Temporary files
 tmp/
 temp/
+
+# Test reports
+test-report.html
