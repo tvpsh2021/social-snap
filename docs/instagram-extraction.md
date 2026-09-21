@@ -14,26 +14,44 @@ This document describes how the extension extracts media from Instagram posts, c
 
 All extraction starts from `InstagramPlatform.extractImages()`. The method:
 
-1. Waits 500ms for the page to settle (`INITIAL_WAIT`).
-2. Queries the `<main>` element as the root container.
-3. Detects whether the post is a carousel by checking for `ul li` inside `<main>`.
-4. Delegates to the appropriate extraction path.
+1. Scans Instagram's `script[type="application/json"]` hydration payload for the current post shortcode.
+2. If structured media data is present, extracts the complete post directly without navigating the carousel.
+3. Otherwise, polls every 100ms for up to 10 seconds until `<main>` contains post media.
+4. Waits 500ms for interaction handlers, checks hydration data once more, then falls back to DOM extraction.
+
+If an extraction started while the Instagram tab was hidden and returned no media, the content script marks it for one retry when the tab becomes visible. Concurrent extraction runs are prevented by an in-page lock.
+
+Auto-extraction starts as soon as the content script runs at `document_idle`; it does not wait for the page `load` event. Instagram can defer that event in a background tab while waiting for lazy subresources.
 
 ```
 extractImages()
   |
-  +-- isCarousel? (ul li found)
-  |     YES --> _navigateCarousel()
+  +-- embedded post data found?
+  |     YES --> _extractEmbeddedMedia()
   |
-  +-- singleVideo? (video element found)
-  |     YES --> _extractSingleVideoUrl()
+  +-- wait for DOM and retry embedded data
   |
-  +-- fallthrough --> _extractSingleImage()
+  +-- DOM fallback
+        +-- carousel --> _navigateCarousel()
+        +-- video --> _extractSingleVideoUrl()
+        +-- image --> _extractSingleImage()
 ```
+
+## Primary Path: Embedded Hydration Data
+
+Instagram includes the current post response in an `application/json` script. The extractor recursively searches parsed payloads for an object whose `code` matches the shortcode in the current URL.
+
+For carousel posts, the matching object contains the complete ordered `carousel_media` array, including slides that Instagram has not rendered into the DOM yet. Each item is converted as follows:
+
+- Image: select the largest `image_versions2.candidates` entry by pixel area.
+- Video: select the largest `video_versions` entry by pixel area and use the largest image candidate as its thumbnail.
+- Single media: process the matching post object as a one-item list.
+
+This path avoids synthetic Next-button clicks, works before visual carousel hydration, and normally returns every item immediately. DOM navigation remains a compatibility fallback when the payload format is unavailable or changes.
 
 ---
 
-## Post Type 1: Single Photo
+## DOM Fallback: Single Photo
 
 **Detection:** no `<ul>` in `<main>`, no `<video>` element.
 
@@ -54,7 +72,7 @@ extractImages()
 
 ---
 
-## Post Type 2: Single Video
+## DOM Fallback: Single Video
 
 **Detection:** no `<ul>` in `<main>`, but a `<video>` element is present.
 
@@ -75,7 +93,7 @@ Instagram uses MSE (Media Source Extensions), so the `<video>` element has `src=
 
 ---
 
-## Post Type 3: Carousel
+## DOM Fallback: Carousel
 
 **Detection:** `ul li` found inside `<main>`.
 
@@ -85,16 +103,15 @@ Carousels can contain any combination of photos and videos across up to 20 items
 
 Instagram renders carousel items as `<li>` elements inside a `<ul>`. The currently visible item has `style="transform: translateX(0px)"`. Adjacent items are offset at non-zero translateX values.
 
-The method clicks the "Next" button repeatedly, collecting media at each step, until no Next button is found or `MAX_ATTEMPTS` (50) is reached. After each click it waits 1000ms (`WAIT_TIME`).
+The method clicks the "Next" button repeatedly, collecting the currently visible media at each step, until no Next button is found or `MAX_ATTEMPTS` (50) is reached.
+
+After each click, it polls every 100ms until the visible media identity changes, with a 5-second timeout. Fast transitions therefore continue immediately instead of always waiting one second, while slow transitions still have time to finish.
 
 ### Visible item detection
 
-At each navigation step, `collectCurrentlyVisibleMedia()` reads the current `<li>` children of the `<ul>`. The logic applies a positional rule:
+At each navigation step, `collectCurrentlyVisibleMedia()` reads the direct `<li>` children of the carousel `<ul>`. It selects the item whose inline transform is `translateX(0px)`. If that marker is unavailable, it falls back to the first item whose bounding rectangle intersects the viewport.
 
-- If there are 3 or more `<li>` elements and one has `translateX(0px)`, process `listItems[1]` (center item). Always also process `listItems[2]`.
-- If there are fewer than 3 `<li>` elements and one has `translateX(0px)`, process only that `translateX(0px)` item.
-
-The 3+ case covers the sliding window Instagram uses, where 3 items are in the DOM at a time: previous, current, and next. The fewer-than-3 case handles legacy posts (circa 2022) where a single image is wrapped in a `<ul>/<li>` structure with only 2 `<li>` elements.
+Only the visible item is collected. Preloaded adjacent items are not collected early because their media, especially videos, may not have finished loading or may not correspond to the current performance entry.
 
 ### Photo items
 
@@ -107,17 +124,18 @@ For a `<li>` that contains an `img`:
 
 For a `<li>` that contains a `<video>`:
 
-1. Checks if the blob URL has already been processed (`processedVideoBlobUrls` set) to avoid reprocessing the same video element.
-2. Calls `getNewVideoUrl()`, which scans performance entries for `.mp4` URLs on `fbcdn.net` or `cdninstagram.com`, skipping already-collected URLs.
+1. Checks if the blob URL has already been successfully processed (`processedVideoBlobUrls` set) to avoid reprocessing the same video element.
+2. Calls `getNewVideoUrl()`, which scans performance entries from newest to oldest for `.mp4` URLs on `fbcdn.net` or `cdninstagram.com`, skipping already-collected URLs and entries explicitly tagged as non-carousel media.
 3. Deduplication uses two layers:
    - Clean URL (after stripping `bytestart`/`byteend` params) via `collectedVideoUrls`.
    - Asset ID from the `efg` URL parameter via `collectedVideoAssetIds`.
 4. If no URL is found immediately (video not yet loaded):
    - Calls `video.play()`.
-   - Waits 800ms.
-   - Retries `getNewVideoUrl()`.
+   - Polls every 100ms for up to 3 seconds.
 5. Thumbnail is extracted from `img[referrerpolicy]` inside the `<li>`.
 6. Adds to `mediaMap` keyed by the clean video URL.
+
+The blob URL is marked as processed only after a matching CDN URL is found. A transient miss therefore remains eligible for retry rather than being permanently skipped.
 
 ### `efg` parameter
 

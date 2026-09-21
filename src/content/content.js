@@ -48,8 +48,13 @@ const GENERAL_CONFIG = {
 
 const CAROUSEL = {
   INSTAGRAM: {
-    INITIAL_WAIT: 500,
-    WAIT_TIME: 1000,
+    READY_TIMEOUT: 10000,
+    READY_POLL_INTERVAL: 100,
+    INTERACTION_READY_WAIT: 500,
+    MEDIA_CHANGE_TIMEOUT: 5000,
+    MEDIA_POLL_INTERVAL: 100,
+    VIDEO_URL_TIMEOUT: 3000,
+    VIDEO_URL_POLL_INTERVAL: 100,
     MAX_ATTEMPTS: 50,
   },
   FACEBOOK: {
@@ -175,6 +180,8 @@ function isValidPostUrl(url) {
 
 let stopFbExtractionRequested = false;
 let fbCarouselActive = false;
+let autoExtractionInProgress = false;
+let instagramRetryWhenVisible = false;
 
 // === BASE PLATFORM CLASS ===
 class BasePlatform {
@@ -382,12 +389,25 @@ class InstagramPlatform extends BasePlatform {
 
   async extractImages() {
     log('=== Starting Instagram image extraction ===');
-    await wait(CAROUSEL.INSTAGRAM.INITIAL_WAIT);
+    let embeddedMedia = this._extractEmbeddedMedia();
+    if (embeddedMedia) {
+      log(`Extracted ${embeddedMedia.length} Instagram media items from embedded data.`);
+      return embeddedMedia;
+    }
 
-    const mainElement = document.querySelector(SELECTORS.INSTAGRAM.MAIN_ELEMENT);
+    const mainElement = await this._waitForPostMain();
     if (!mainElement) {
-      log('No <main> element found. Cannot extract images.');
+      log('Instagram post did not become ready before the timeout.');
       return [];
+    }
+
+    // Give Instagram time to attach interaction handlers before using DOM navigation fallback.
+    await wait(CAROUSEL.INSTAGRAM.INTERACTION_READY_WAIT);
+
+    embeddedMedia = this._extractEmbeddedMedia();
+    if (embeddedMedia) {
+      log(`Extracted ${embeddedMedia.length} Instagram media items from embedded data after hydration.`);
+      return embeddedMedia;
     }
 
     const isCarousel = !!mainElement.querySelector(SELECTORS.INSTAGRAM.CAROUSEL_INDICATOR);
@@ -466,6 +486,114 @@ class InstagramPlatform extends BasePlatform {
     return imageData;
   }
 
+  _extractEmbeddedMedia() {
+    const shortcodeMatch = window.location.pathname.match(/\/(?:p|reel)\/([^/]+)/);
+    const shortcode = shortcodeMatch?.[1];
+    if (!shortcode) return null;
+
+    const findPost = (root) => {
+      const stack = [root];
+      const visited = new WeakSet();
+
+      while (stack.length > 0) {
+        const value = stack.pop();
+        if (!value || typeof value !== 'object' || visited.has(value)) continue;
+        visited.add(value);
+
+        const hasMedia = Array.isArray(value.carousel_media)
+          || Array.isArray(value.image_versions2?.candidates)
+          || Array.isArray(value.video_versions);
+        if (value.code === shortcode && hasMedia) return value;
+
+        Object.values(value).forEach(child => {
+          if (child && typeof child === 'object') stack.push(child);
+        });
+      }
+
+      return null;
+    };
+
+    let post = null;
+    for (const script of document.querySelectorAll('script[type="application/json"]')) {
+      const text = script.textContent || '';
+      if (!text.includes(shortcode) ||
+          (!text.includes('carousel_media') && !text.includes('image_versions2') && !text.includes('video_versions'))) {
+        continue;
+      }
+
+      try {
+        post = findPost(JSON.parse(text));
+      } catch {
+        continue;
+      }
+
+      if (post) break;
+    }
+
+    if (!post) return null;
+
+    const items = Array.isArray(post.carousel_media) && post.carousel_media.length > 0
+      ? post.carousel_media
+      : [post];
+    const mediaData = [];
+
+    const getLargestCandidate = (candidates) => {
+      if (!Array.isArray(candidates)) return null;
+      return candidates.reduce((largest, candidate) => {
+        if (!candidate?.url) return largest;
+        if (!largest) return candidate;
+        const candidateArea = (candidate.width || 0) * (candidate.height || 0);
+        const largestArea = (largest.width || 0) * (largest.height || 0);
+        return candidateArea > largestArea ? candidate : largest;
+      }, null);
+    };
+
+    items.forEach((item) => {
+      const imageCandidate = getLargestCandidate(item.image_versions2?.candidates);
+      const videoCandidate = getLargestCandidate(item.video_versions);
+      const isVideo = item.media_type === 2 || !!videoCandidate;
+
+      if (isVideo && videoCandidate?.url) {
+        mediaData.push({
+          index: mediaData.length + 1,
+          alt: item.accessibility_caption || 'Video',
+          thumbnailUrl: imageCandidate?.url || item.display_uri || '',
+          fullSizeUrl: this._cleanVideoUrl(videoCandidate.url),
+          maxWidth: 0,
+          mediaType: 'video'
+        });
+      } else if (imageCandidate?.url || item.display_uri) {
+        const imageUrl = imageCandidate?.url || item.display_uri;
+        mediaData.push({
+          index: mediaData.length + 1,
+          alt: item.accessibility_caption || '',
+          thumbnailUrl: imageUrl,
+          fullSizeUrl: imageUrl,
+          maxWidth: imageCandidate?.width || item.original_width || 0,
+          mediaType: 'image'
+        });
+      }
+    });
+
+    return mediaData.length > 0 ? mediaData : null;
+  }
+
+  async _waitForPostMain() {
+    const { READY_TIMEOUT, READY_POLL_INTERVAL } = CAROUSEL.INSTAGRAM;
+    const deadline = Date.now() + READY_TIMEOUT;
+    const maxPolls = Math.ceil(READY_TIMEOUT / READY_POLL_INTERVAL);
+
+    for (let poll = 0; poll <= maxPolls; poll++) {
+      const mainElement = document.querySelector(SELECTORS.INSTAGRAM.MAIN_ELEMENT);
+      const hasPostMedia = mainElement?.querySelector('ul li, video, img');
+      if (mainElement && hasPostMedia) return mainElement;
+      if (Date.now() >= deadline || poll === maxPolls) break;
+      await wait(READY_POLL_INTERVAL);
+    }
+
+    return null;
+  }
+
   _findBoundaryElement() {
     const allDivs = document.querySelectorAll(SELECTORS.INSTAGRAM.BOUNDARY_ELEMENTS);
     for (const el of allDivs) {
@@ -486,7 +614,7 @@ class InstagramPlatform extends BasePlatform {
   }
 
   async _navigateCarousel(container) {
-    log('Starting carousel navigation with user-defined rule-based logic and fixed wait...');
+    log('Starting Instagram carousel navigation with media-change polling...');
     const mediaMap = new Map();
     const collectedVideoUrls = new Set();
     const collectedVideoAssetIds = new Set();
@@ -510,9 +638,11 @@ class InstagramPlatform extends BasePlatform {
         // efg uses URL-safe base64 (- and _ instead of + and /)
         const standardBase64 = efg.replace(/-/g, '+').replace(/_/g, '/');
         const decoded = JSON.parse(atob(standardBase64));
+        const vencodeTag = typeof decoded.vencodeTag === 'string' ? decoded.vencodeTag : null;
         return {
           assetId: decoded.xpv_asset_id ? String(decoded.xpv_asset_id) : null,
-          isCarouselItem: typeof decoded.vencodeTag === 'string' && decoded.vencodeTag.includes('carousel_item')
+          vencodeTag,
+          isCarouselItem: vencodeTag?.includes('carousel_item') === true
         };
       } catch {
         return null;
@@ -521,7 +651,10 @@ class InstagramPlatform extends BasePlatform {
 
     const getNewVideoUrl = () => {
       const entries = performance.getEntriesByType('resource');
-      for (const entry of entries) {
+      const candidates = [];
+
+      for (let index = entries.length - 1; index >= 0; index--) {
+        const entry = entries[index];
         if (!entry.name.includes('.mp4')) continue;
         const isCdnUrl = entry.name.includes('fbcdn.net') || entry.name.includes('cdninstagram.com');
         if (!isCdnUrl) continue;
@@ -529,81 +662,125 @@ class InstagramPlatform extends BasePlatform {
         if (collectedVideoUrls.has(cleanUrl)) continue;
         const meta = getVideoMeta(entry.name);
         if (meta?.assetId && collectedVideoAssetIds.has(meta.assetId)) continue;
-        return cleanUrl;
+        if (meta?.vencodeTag && !meta.isCarouselItem) continue;
+        candidates.push({ cleanUrl, isCarouselItem: meta?.isCarouselItem === true });
       }
+
+      return candidates.find(candidate => candidate.isCarouselItem)?.cleanUrl
+        || candidates[0]?.cleanUrl
+        || null;
+    };
+
+    const waitForNewVideoUrl = async (video) => {
+      let videoUrl = getNewVideoUrl();
+      if (videoUrl) return videoUrl;
+
+      log('Video detected but no URL found, triggering load and polling...');
+      try {
+        const playPromise = video.play();
+        if (playPromise) playPromise.catch(() => {});
+      } catch {
+        // Autoplay can be blocked; polling still catches requests already in flight.
+      }
+
+      const { VIDEO_URL_TIMEOUT, VIDEO_URL_POLL_INTERVAL } = CAROUSEL.INSTAGRAM;
+      const deadline = Date.now() + VIDEO_URL_TIMEOUT;
+      const maxPolls = Math.ceil(VIDEO_URL_TIMEOUT / VIDEO_URL_POLL_INTERVAL);
+
+      for (let poll = 0; poll < maxPolls; poll++) {
+        await wait(VIDEO_URL_POLL_INTERVAL);
+        videoUrl = getNewVideoUrl();
+        if (videoUrl) return videoUrl;
+        if (Date.now() >= deadline) break;
+      }
+
       return null;
     };
 
-    const collectCurrentlyVisibleMedia = async () => {
+    const getVisibleListItem = () => {
       const ul = container.querySelector(SELECTORS.INSTAGRAM.UL_ELEMENT);
-      if (!ul) return;
+      if (!ul) return null;
 
       const listItems = Array.from(ul.children).filter(li => li instanceof HTMLLIElement);
-      log('listItems: ', listItems);
-
-      if (listItems.length === 0) return;
+      if (listItems.length === 0) return null;
 
       const zeroPxLi = listItems.find(li => getTranslateXFromString(li) === 0);
+      if (zeroPxLi) return zeroPxLi;
 
-      const insertMediaFromLi = async (_visibleLi) => {
-        const video = _visibleLi.querySelector('video');
-        if (video) {
-          if (video.src && processedVideoBlobUrls.has(video.src)) {
-            log('Video element already processed, skipping');
-            return;
-          }
-          if (video.src) processedVideoBlobUrls.add(video.src);
+      return listItems.find(li => {
+        const rect = li.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.left < window.innerWidth;
+      }) || null;
+    };
 
-          let videoUrl = getNewVideoUrl();
-          if (!videoUrl) {
-            log('Video detected but no URL found, triggering load and retrying...');
-            try {
-              const playPromise = video.play();
-              if (playPromise) playPromise.catch(() => {});
-            } catch {
-              // ignore autoplay restrictions
-            }
-            await wait(800);
-            videoUrl = getNewVideoUrl();
-          }
+    const getMediaIdentity = (listItem) => {
+      if (!listItem) return null;
+      const video = listItem.querySelector('video');
+      if (video) {
+        const thumbnail = listItem.querySelector('img[referrerpolicy]');
+        const videoIdentity = video.currentSrc || video.src || video.poster || thumbnail?.currentSrc || thumbnail?.src;
+        return videoIdentity ? `video:${videoIdentity}` : null;
+      }
+      const img = listItem.querySelector(SELECTORS.INSTAGRAM.POST_IMAGES);
+      const imageIdentity = img?.currentSrc || img?.src;
+      return imageIdentity ? `image:${imageIdentity}` : null;
+    };
 
-          if (videoUrl) {
-            collectedVideoUrls.add(videoUrl);
-            const meta = getVideoMeta(videoUrl);
-            if (meta?.assetId) collectedVideoAssetIds.add(meta.assetId);
-            if (!mediaMap.has(videoUrl)) {
-              const thumbnailImg = _visibleLi.querySelector('img[referrerpolicy]');
-              const thumbnailUrl = thumbnailImg?.src || '';
-              log(`Found new video via performance API. Total: ${mediaMap.size + 1}`);
-              mediaMap.set(videoUrl, { mediaType: 'video', src: videoUrl, thumbnailUrl });
-            }
-          } else {
-            log('Video detected but no new video URL found in performance entries');
-          }
+    const collectCurrentlyVisibleMedia = async () => {
+      const visibleLi = getVisibleListItem();
+      if (!visibleLi) return;
+
+      const video = visibleLi.querySelector('video');
+      if (video) {
+        const blobUrl = video.currentSrc || video.src;
+        if (blobUrl && processedVideoBlobUrls.has(blobUrl)) {
+          log('Video element already processed, skipping');
           return;
         }
 
-        const img = _visibleLi.querySelector(SELECTORS.INSTAGRAM.POST_IMAGES);
-        if (img && img.src) {
-          if (!mediaMap.has(img.src)) {
-            log(`Found new image. Total: ${mediaMap.size + 1}`);
-            mediaMap.set(img.src, img);
-          }
+        const videoUrl = await waitForNewVideoUrl(video);
+        if (!videoUrl) {
+          log('Video detected but no new video URL found before timeout');
+          return;
         }
-      };
 
-      if (listItems.length >= 3) {
-        // Standard carousel: 3+ items in DOM (previous, current, next sliding window)
-        if (zeroPxLi) {
-          log('Rule matched: Found li with translateX(0px) and li>=3');
-          await insertMediaFromLi(listItems[1]);
+        collectedVideoUrls.add(videoUrl);
+        const meta = getVideoMeta(videoUrl);
+        if (meta?.assetId) collectedVideoAssetIds.add(meta.assetId);
+        if (blobUrl) processedVideoBlobUrls.add(blobUrl);
+
+        if (!mediaMap.has(videoUrl)) {
+          const thumbnailImg = visibleLi.querySelector('img[referrerpolicy]');
+          const thumbnailUrl = thumbnailImg?.src || '';
+          log(`Found new video via performance API. Total: ${mediaMap.size + 1}`);
+          mediaMap.set(videoUrl, { mediaType: 'video', src: videoUrl, thumbnailUrl });
         }
-        await insertMediaFromLi(listItems[2]);
-      } else if (zeroPxLi) {
-        // Single-image post wrapped in ul/li, or carousel with fewer than 3 items loaded
-        log(`Processing zeroPxLi directly (listItems.length=${listItems.length})`);
-        await insertMediaFromLi(zeroPxLi);
+        return;
       }
+
+      const img = visibleLi.querySelector(SELECTORS.INSTAGRAM.POST_IMAGES);
+      const imageUrl = img?.currentSrc || img?.src;
+      if (img && imageUrl && !mediaMap.has(imageUrl)) {
+        log(`Found new image. Total: ${mediaMap.size + 1}`);
+        mediaMap.set(imageUrl, img);
+      }
+    };
+
+    const waitForMediaChange = async (previousListItem, previousIdentity) => {
+      const { MEDIA_CHANGE_TIMEOUT, MEDIA_POLL_INTERVAL } = CAROUSEL.INSTAGRAM;
+      const deadline = Date.now() + MEDIA_CHANGE_TIMEOUT;
+      const maxPolls = Math.ceil(MEDIA_CHANGE_TIMEOUT / MEDIA_POLL_INTERVAL);
+
+      for (let poll = 0; poll < maxPolls; poll++) {
+        const visibleLi = getVisibleListItem();
+        const currentIdentity = getMediaIdentity(visibleLi);
+        const listItemChanged = visibleLi && visibleLi !== previousListItem;
+        if (currentIdentity && (listItemChanged || currentIdentity !== previousIdentity)) return true;
+        if (Date.now() >= deadline) break;
+        await wait(MEDIA_POLL_INTERVAL);
+      }
+
+      return false;
     };
 
     while (navigationCount < CAROUSEL.INSTAGRAM.MAX_ATTEMPTS) {
@@ -616,11 +793,17 @@ class InstagramPlatform extends BasePlatform {
         break;
       }
 
+      const previousListItem = getVisibleListItem();
+      const previousIdentity = getMediaIdentity(previousListItem);
       log(`Navigation attempt ${navigationCount + 1}: Clicking Next button.`);
       nextButton.click();
       navigationCount++;
 
-      await wait(CAROUSEL.INSTAGRAM.WAIT_TIME);
+      const mediaChanged = await waitForMediaChange(previousListItem, previousIdentity);
+      if (!mediaChanged) {
+        log('Timed out waiting for Instagram media to change, stopping');
+        break;
+      }
     }
 
     log(`Carousel navigation complete. Found ${mediaMap.size} unique media items.`);
@@ -1814,44 +1997,76 @@ chrome.runtime.onMessage.addListener((request) => {
 });
 
 // === AUTO EXTRACTION ===
-window.addEventListener('load', () => {
-  setTimeout(async () => {
-    fbCarouselActive = false;
-    const isFacebook = window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK]);
-    try {
-      log('=== Social Media Image Downloader Auto-Extraction ===');
-      log('Current URL:', window.location.href);
-      log('Platform detection starting...');
+async function runAutoExtraction() {
+  if (autoExtractionInProgress) return;
 
-      const images = await extractImages();
-      log('Auto-extraction completed successfully:', images);
+  autoExtractionInProgress = true;
+  fbCarouselActive = false;
+  const isFacebook = window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK]);
+  const isInstagram = window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.INSTAGRAM]);
+  const instagramStartedHidden = isInstagram && document.hidden;
 
-      // For Facebook carousel, navigateCarousel() already sent incremental messages + EXTRACTION_COMPLETE.
-      // For other Facebook paths (reel, direct video, static image), send IMAGES_EXTRACTED normally.
-      if (!(isFacebook && fbCarouselActive)) {
-        chrome.runtime.sendMessage({
-          action: CONTENT_MESSAGES.IMAGES_EXTRACTED,
-          images,
-          count: images.length
-        });
-      }
-    } catch (error) {
-      logError('Auto-extraction error:', error);
-      // For Facebook carousel errors, EXTRACTION_COMPLETE was already sent in navigateCarousel()'s finally block.
-      // Sending EXTRACTION_ERROR would wipe partial data from storage, so skip it.
-      if (!(isFacebook && fbCarouselActive)) {
-        chrome.runtime.sendMessage({
-          action: CONTENT_MESSAGES.EXTRACTION_ERROR,
-          error: error.message,
-          count: 0
-        });
-      }
+  if (instagramStartedHidden) instagramRetryWhenVisible = true;
+
+  try {
+    log('=== Social Media Image Downloader Auto-Extraction ===');
+    log('Current URL:', window.location.href);
+    log('Platform detection starting...');
+
+    const images = await extractImages();
+    log('Auto-extraction completed successfully:', images);
+
+    if (isInstagram) {
+      instagramRetryWhenVisible = instagramStartedHidden && images.length === 0;
     }
-  }, GENERAL_CONFIG.ON_LOAD_WAIT);
+
+    // For Facebook carousel, navigateCarousel() already sent incremental messages + EXTRACTION_COMPLETE.
+    // For other Facebook paths (reel, direct video, static image), send IMAGES_EXTRACTED normally.
+    if (!(isFacebook && fbCarouselActive)) {
+      chrome.runtime.sendMessage({
+        action: CONTENT_MESSAGES.IMAGES_EXTRACTED,
+        images,
+        count: images.length
+      });
+    }
+  } catch (error) {
+    logError('Auto-extraction error:', error);
+    if (isInstagram) instagramRetryWhenVisible = instagramStartedHidden;
+
+    // For Facebook carousel errors, EXTRACTION_COMPLETE was already sent in navigateCarousel()'s finally block.
+    // Sending EXTRACTION_ERROR would wipe partial data from storage, so skip it.
+    if (!(isFacebook && fbCarouselActive)) {
+      chrome.runtime.sendMessage({
+        action: CONTENT_MESSAGES.EXTRACTION_ERROR,
+        error: error.message,
+        count: 0
+      });
+    }
+  } finally {
+    autoExtractionInProgress = false;
+    if (instagramRetryWhenVisible && !document.hidden) {
+      setTimeout(runAutoExtraction, 0);
+    }
+  }
+}
+
+function initializeAutoExtraction() {
+  const isInstagram = window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.INSTAGRAM]);
+  setTimeout(runAutoExtraction, isInstagram ? 0 : GENERAL_CONFIG.ON_LOAD_WAIT);
+
+  if (isInstagram) {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && instagramRetryWhenVisible) {
+        runAutoExtraction();
+      }
+    });
+  }
 
   // Setup SPA carousel detection for X.com
   setupSpaCarouselDetection();
-});
+}
+
+initializeAutoExtraction();
 
 // === SPA CAROUSEL DETECTION ===
 function setupSpaCarouselDetection() {

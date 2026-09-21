@@ -88,7 +88,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for code standards and how to add new p
 **No images detected**
 - Make sure you are on an individual post page, not a feed or profile
 - Wait for the page to fully load before opening the popup
-- For Instagram/Facebook carousels, the extension navigates automatically — this can take 10-30 seconds
+- Instagram reads complete post data directly when available; Facebook and compatibility fallbacks may navigate the carousel and take longer
 - Refresh and try again if it still fails
 
 **Download failed**

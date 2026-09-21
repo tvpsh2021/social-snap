@@ -47,6 +47,9 @@ function loadContentScript() {
     );
   });
 
+  // Tests invoke extractors directly; do not schedule the browser auto-extraction entry point.
+  source = source.replace('\ninitializeAutoExtraction();\n', '\n');
+
   eval(source); // content.js is a browser script with no module exports; eval is the only viable loader
 }
 

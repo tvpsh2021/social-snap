@@ -10,9 +10,20 @@ beforeAll(() => {
 
 beforeEach(() => {
   document.body.innerHTML = '';
+  document.head.innerHTML = '';
   jest.clearAllMocks();
+  global.wait.mockReset().mockResolvedValue(undefined);
   performance.getEntriesByType = jest.fn().mockReturnValue([]);
 });
+
+function appendEmbeddedPost(post) {
+  const script = document.createElement('script');
+  script.type = 'application/json';
+  script.textContent = JSON.stringify({
+    require: [['ScheduledServerJS', 'handle', null, [{ data: { post } }]]]
+  });
+  document.head.appendChild(script);
+}
 
 describe('InstagramPlatform.extractImages()', () => {
   test('returns empty array when <main> element is not found', async () => {
@@ -23,6 +34,91 @@ describe('InstagramPlatform.extractImages()', () => {
     const result = await platform.extractImages();
 
     expect(result).toEqual([]);
+  });
+
+  test('waits for Instagram to render the post DOM', async () => {
+    mockWindowLocation('/p/ABC123');
+
+    global.wait.mockImplementationOnce(async () => {
+      const main = document.createElement('main');
+      const img = document.createElement('img');
+      img.src = 'https://scontent.cdninstagram.com/v/delayed.jpg';
+      Object.defineProperty(img, 'naturalWidth', { get: () => 400, configurable: true });
+      Object.defineProperty(img, 'naturalHeight', { get: () => 300, configurable: true });
+      main.appendChild(img);
+      document.body.appendChild(main);
+    });
+
+    const platform = new global.InstagramPlatform();
+    const result = await platform.extractImages();
+
+    expect(global.wait).toHaveBeenCalledWith(global.CAROUSEL.INSTAGRAM.READY_POLL_INTERVAL);
+    expect(result).toHaveLength(1);
+    expect(result[0].fullSizeUrl).toContain('delayed.jpg');
+  });
+
+  test('extracts all carousel images from embedded data without rendered post DOM', async () => {
+    mockWindowLocation('/p/ABC123');
+    appendEmbeddedPost({
+      code: 'ABC123',
+      media_type: 8,
+      carousel_media: Array.from({ length: 6 }, (_, index) => ({
+        media_type: 1,
+        accessibility_caption: `Photo ${index + 1}`,
+        image_versions2: {
+          candidates: [
+            { url: `https://scontent.cdninstagram.com/v/photo-${index + 1}-small.jpg`, width: 640, height: 640 },
+            { url: `https://scontent.cdninstagram.com/v/photo-${index + 1}.jpg`, width: 1440, height: 1920 },
+          ]
+        }
+      }))
+    });
+
+    const platform = new global.InstagramPlatform();
+    const result = await platform.extractImages();
+
+    expect(result).toHaveLength(6);
+    expect(result.map(item => item.fullSizeUrl)).toEqual(
+      Array.from({ length: 6 }, (_, index) => `https://scontent.cdninstagram.com/v/photo-${index + 1}.jpg`)
+    );
+    expect(global.wait).not.toHaveBeenCalled();
+  });
+
+  test('extracts mixed carousel videos directly from embedded data', async () => {
+    mockWindowLocation('/p/ABC123');
+    appendEmbeddedPost({
+      code: 'ABC123',
+      media_type: 8,
+      carousel_media: [
+        {
+          media_type: 1,
+          image_versions2: {
+            candidates: [{ url: 'https://scontent.cdninstagram.com/v/photo.jpg', width: 1080, height: 1350 }]
+          }
+        },
+        {
+          media_type: 2,
+          image_versions2: {
+            candidates: [{ url: 'https://scontent.cdninstagram.com/v/poster.jpg', width: 1080, height: 1350 }]
+          },
+          video_versions: [
+            { url: 'https://video.cdninstagram.com/v/video-low.mp4', width: 480, height: 600 },
+            { url: 'https://video.cdninstagram.com/v/video-high.mp4?bytestart=0&byteend=100', width: 1080, height: 1350 },
+          ]
+        }
+      ]
+    });
+
+    const platform = new global.InstagramPlatform();
+    const result = await platform.extractImages();
+
+    expect(result).toHaveLength(2);
+    expect(result[0].mediaType).toBe('image');
+    expect(result[1]).toMatchObject({
+      mediaType: 'video',
+      thumbnailUrl: 'https://scontent.cdninstagram.com/v/poster.jpg',
+      fullSizeUrl: 'https://video.cdninstagram.com/v/video-high.mp4'
+    });
   });
 
   test('single image post: returns the main post image', async () => {
@@ -98,7 +194,7 @@ describe('InstagramPlatform.extractImages()', () => {
     expect(result).toEqual([]);
   });
 
-  test('carousel post: collects the visible image slide via translateX detection', async () => {
+  test('carousel post: collects only the visible image slide via translateX detection', async () => {
     mockWindowLocation('/p/ABC123');
 
     // Build the carousel DOM with JS methods so jsdom respects element.style.transform
@@ -120,14 +216,58 @@ describe('InstagramPlatform.extractImages()', () => {
     main.appendChild(ul);
     document.body.appendChild(main);
 
-    // No Next button → navigation loop exits after first collection.
-    // The carousel logic always collects listItems[1] (current) and listItems[2] (preloaded next).
+    // No Next button → navigation loop exits after collecting the visible slide.
     const platform = new global.InstagramPlatform();
     const result = await platform.extractImages();
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
     expect(result[0].fullSizeUrl).toContain('current.jpg');
-    expect(result[1].fullSizeUrl).toContain('next.jpg');
+  });
+
+  test('carousel post: polls until the visible media changes before collecting the next slide', async () => {
+    mockWindowLocation('/p/ABC123');
+
+    const main = document.createElement('main');
+    const ul = document.createElement('ul');
+    const currentLi = document.createElement('li');
+    const nextLi = document.createElement('li');
+    const currentImg = document.createElement('img');
+    const nextImg = document.createElement('img');
+    const nextButton = document.createElement('button');
+
+    currentLi.style.transform = 'translateX(0px)';
+    nextLi.style.transform = 'translateX(375px)';
+    currentImg.src = 'https://scontent.cdninstagram.com/v/current.jpg';
+    nextImg.src = 'https://scontent.cdninstagram.com/v/next.jpg';
+    nextButton.tabIndex = -1;
+    nextButton.style.right = '0px';
+    currentLi.appendChild(currentImg);
+    nextLi.appendChild(nextImg);
+    ul.appendChild(currentLi);
+    ul.appendChild(nextLi);
+    main.appendChild(ul);
+    main.appendChild(nextButton);
+    document.body.appendChild(main);
+
+    let clicked = false;
+    nextButton.addEventListener('click', () => {
+      clicked = true;
+    });
+    global.wait.mockImplementation(async () => {
+      if (!clicked) return;
+      currentLi.style.transform = 'translateX(-375px)';
+      nextLi.style.transform = 'translateX(0px)';
+      nextButton.remove();
+    });
+
+    const platform = new global.InstagramPlatform();
+    const result = await platform.extractImages();
+
+    expect(result.map(item => item.fullSizeUrl)).toEqual([
+      'https://scontent.cdninstagram.com/v/current.jpg',
+      'https://scontent.cdninstagram.com/v/next.jpg',
+    ]);
+    expect(global.wait).toHaveBeenCalledWith(global.CAROUSEL.INSTAGRAM.MEDIA_POLL_INTERVAL);
   });
 
   test('carousel post: collects video from visible slide via performance API', async () => {
@@ -169,14 +309,73 @@ describe('InstagramPlatform.extractImages()', () => {
     main.appendChild(ul);
     document.body.appendChild(main);
 
-    // The carousel logic collects listItems[1] (video) and listItems[2] (next image).
     const platform = new global.InstagramPlatform();
     const result = await platform.extractImages();
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
     expect(result[0].mediaType).toBe('video');
     expect(result[0].fullSizeUrl).toContain('carousel_clip.mp4');
-    expect(result[1].fullSizeUrl).toContain('next.jpg');
+  });
+
+  test('carousel video: polls for a delayed MP4 request', async () => {
+    mockWindowLocation('/p/ABC123');
+
+    performance.getEntriesByType = jest.fn()
+      .mockReturnValueOnce([])
+      .mockReturnValue([
+        { name: 'https://video.cdninstagram.com/v/delayed_clip.mp4' }
+      ]);
+
+    const main = document.createElement('main');
+    const ul = document.createElement('ul');
+    const currentLi = document.createElement('li');
+    const video = document.createElement('video');
+    video.src = 'blob:https://www.instagram.com/delayed';
+    video.play = jest.fn().mockResolvedValue(undefined);
+    currentLi.style.transform = 'translateX(0px)';
+    currentLi.appendChild(video);
+    ul.appendChild(currentLi);
+    main.appendChild(ul);
+    document.body.appendChild(main);
+
+    const platform = new global.InstagramPlatform();
+    const result = await platform.extractImages();
+
+    expect(video.play).toHaveBeenCalled();
+    expect(global.wait).toHaveBeenCalledWith(global.CAROUSEL.INSTAGRAM.VIDEO_URL_POLL_INTERVAL);
+    expect(result).toHaveLength(1);
+    expect(result[0].fullSizeUrl).toContain('delayed_clip.mp4');
+  });
+
+  test('carousel video: ignores MP4 resources explicitly tagged as non-carousel', async () => {
+    mockWindowLocation('/p/ABC123');
+
+    const encodeMeta = meta => Buffer.from(JSON.stringify(meta))
+      .toString('base64url');
+    const unrelatedMeta = encodeMeta({ xpv_asset_id: '111', vencodeTag: 'clips_video' });
+    const carouselMeta = encodeMeta({ xpv_asset_id: '222', vencodeTag: 'carousel_item' });
+    performance.getEntriesByType = jest.fn().mockReturnValue([
+      { name: `https://video.cdninstagram.com/v/unrelated.mp4?efg=${unrelatedMeta}` },
+      { name: `https://video.cdninstagram.com/v/carousel.mp4?efg=${carouselMeta}` },
+    ]);
+
+    const main = document.createElement('main');
+    const ul = document.createElement('ul');
+    const currentLi = document.createElement('li');
+    const video = document.createElement('video');
+    video.src = 'blob:https://www.instagram.com/carousel';
+    video.play = jest.fn().mockResolvedValue(undefined);
+    currentLi.style.transform = 'translateX(0px)';
+    currentLi.appendChild(video);
+    ul.appendChild(currentLi);
+    main.appendChild(ul);
+    document.body.appendChild(main);
+
+    const platform = new global.InstagramPlatform();
+    const result = await platform.extractImages();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].fullSizeUrl).toContain('/carousel.mp4');
   });
 });
 
