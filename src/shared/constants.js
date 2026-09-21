@@ -16,7 +16,9 @@ const CONTENT_MESSAGES = {
   IMAGES_EXTRACTED: 'imagesExtracted',
   IMAGES_APPEND: 'imagesAppend',
   EXTRACTION_COMPLETE: 'extractionComplete',
-  EXTRACTION_ERROR: 'extractionError'
+  EXTRACTION_ERROR: 'extractionError',
+  GET_SAVE_STATE: 'getSaveState',
+  UNSAVE_POST: 'unsavePost'
 };
 
 const POPUP_MESSAGES = {
@@ -26,6 +28,7 @@ const POPUP_MESSAGES = {
 const BACKGROUND_MESSAGES = {
   DOWNLOAD_IMAGES: 'downloadImages',
   DOWNLOAD_SINGLE_IMAGE: 'downloadSingleImage',
+  DOWNLOAD_AND_UNSAVE: 'downloadAndUnsave',
   FETCH_FB_VIDEO_URL: 'fetchFbVideoUrl'
 };
 

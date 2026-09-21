@@ -35,9 +35,10 @@ class DownloadManager {
     return getPlatformFromUrl(tab.url) || 'unknown';
   }
 
-  async downloadAllImages(images) {
-    const platformName = await this._detectPlatform();
+  async downloadAllImages(images, requestedPlatform = null) {
+    const platformName = requestedPlatform || await this._detectPlatform();
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+    const failures = [];
 
     for (let i = 0; i < images.length; i++) {
       const image = images[i];
@@ -57,7 +58,12 @@ class DownloadManager {
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
         console.error(`Download image ${i + 1} failed:`, error);
+        failures.push(i + 1);
       }
+    }
+
+    if (failures.length > 0) {
+      throw new Error(`Failed to start ${failures.length} of ${images.length} downloads.`);
     }
   }
 
@@ -89,6 +95,24 @@ const downloadManager = new DownloadManager();
 // In-memory set tracking tabs with ongoing extractions.
 // Best-effort: cleared if service worker is killed and restarts.
 const extractingTabs = new Set();
+
+async function downloadAndUnsave({ images, tabId, platform }) {
+  await downloadManager.downloadAllImages(images, platform);
+
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      action: CONTENT_MESSAGES.UNSAVE_POST
+    });
+    if (response?.success) return;
+
+    const error = new Error(response?.error || 'The post could not be removed from saved items.');
+    error.downloadsStarted = true;
+    throw error;
+  } catch (error) {
+    error.downloadsStarted = true;
+    throw error;
+  }
+}
 
 // === FACEBOOK VIDEO URL COLLECTOR ===
 // Passively collects Facebook video MP4 URLs via webRequest.
@@ -212,6 +236,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => {
         console.error('Download single image failed:', error);
         sendResponse({ success: false, error: error.message });
+      });
+    return true;
+
+  case BACKGROUND_MESSAGES.DOWNLOAD_AND_UNSAVE:
+    downloadAndUnsave({
+      images: request.images,
+      tabId: request.tabId,
+      platform: request.platform
+    })
+      .then(() => sendResponse({ success: true }))
+      .catch(error => {
+        console.error('Download and unsave failed:', error);
+        sendResponse({
+          success: false,
+          downloadsStarted: error.downloadsStarted === true,
+          error: error.message
+        });
       });
     return true;
 

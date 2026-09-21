@@ -1,9 +1,58 @@
 const { loadBackgroundScript } = require('./helpers.js');
+const { CONTENT_MESSAGES } = require('../../src/shared/constants.js');
 loadBackgroundScript();
 
 describe('DownloadManager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('downloadAndUnsave', () => {
+    test('unsaves from the target tab after all downloads are accepted', async () => {
+      chrome.downloads.download.mockResolvedValue(1);
+      chrome.tabs.sendMessage.mockResolvedValue({ success: true });
+
+      await global.downloadAndUnsave({
+        images: [{ fullSizeUrl: 'https://cdn.example.com/1.jpg', mediaType: 'image' }],
+        tabId: 42,
+        platform: 'threads'
+      });
+
+      expect(chrome.downloads.download).toHaveBeenCalledTimes(1);
+      expect(chrome.downloads.download.mock.calls[0][0].filename).toMatch(/^threads_image_/);
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(42, {
+        action: CONTENT_MESSAGES.UNSAVE_POST
+      });
+    });
+
+    test('keeps the post saved when a download cannot be started', async () => {
+      chrome.downloads.download.mockRejectedValue(new Error('Network error'));
+
+      await expect(global.downloadAndUnsave({
+        images: [{ fullSizeUrl: 'https://cdn.example.com/1.jpg', mediaType: 'image' }],
+        tabId: 42,
+        platform: 'threads'
+      })).rejects.toThrow('Failed to start 1 of 1 downloads.');
+
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('marks an unsave failure after downloads have started', async () => {
+      chrome.downloads.download.mockResolvedValue(1);
+      chrome.tabs.sendMessage.mockResolvedValue({ success: false, error: 'Unsave failed' });
+
+      try {
+        await global.downloadAndUnsave({
+          images: [{ fullSizeUrl: 'https://cdn.example.com/1.jpg', mediaType: 'image' }],
+          tabId: 42,
+          platform: 'threads'
+        });
+        throw new Error('Expected downloadAndUnsave to reject');
+      } catch (error) {
+        expect(error.message).toBe('Unsave failed');
+        expect(error.downloadsStarted).toBe(true);
+      }
+    });
   });
 
   describe('_detectPlatform', () => {
@@ -95,7 +144,7 @@ describe('DownloadManager', () => {
       expect(ts1).toBe(ts2);
     });
 
-    test('continues downloading when one image fails', async () => {
+    test('continues downloading but rejects when one image fails', async () => {
       chrome.tabs.query.mockResolvedValue([{ url: 'https://www.instagram.com/p/abc' }]);
       chrome.downloads.download
         .mockRejectedValueOnce(new Error('Network error'))
@@ -106,7 +155,8 @@ describe('DownloadManager', () => {
         { fullSizeUrl: 'https://cdn.example.com/2.jpg', mediaType: 'image' },
       ];
 
-      await global.downloadManager.downloadAllImages(images);
+      await expect(global.downloadManager.downloadAllImages(images))
+        .rejects.toThrow('Failed to start 1 of 2 downloads.');
 
       expect(chrome.downloads.download).toHaveBeenCalledTimes(2);
     });

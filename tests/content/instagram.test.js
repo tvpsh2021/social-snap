@@ -379,6 +379,23 @@ describe('InstagramPlatform.extractImages()', () => {
   });
 });
 
+describe('InstagramPlatform saved post actions', () => {
+  test('detects a localized remove control inside main', async () => {
+    document.body.innerHTML = `
+      <main><button id="unsave" aria-label="取消儲存"></button></main>
+    `;
+    mockWindowLocation('/p/ABC123');
+    document.getElementById('unsave').addEventListener('click', event => event.currentTarget.remove());
+
+    const platform = new global.InstagramPlatform();
+    expect(platform.getSaveState().saved).toBe(true);
+
+    await platform.unsavePost();
+
+    expect(platform.getSaveState().saved).toBe(false);
+  });
+});
+
 describe('InstagramPlatform._findNextButton()', () => {
   test('returns null when no button matches the right:0px computed style', () => {
     const main = document.createElement('main');

@@ -359,6 +359,17 @@
         border-color: rgba(213,198,224,0.3);
       }
 
+      .download-btn-unsave {
+        width: 100%;
+        background: var(--color-surf-1);
+        color: var(--color-text-primary);
+        border: 1px solid var(--color-border-hi);
+      }
+      .download-btn-unsave:hover:not(:disabled) {
+        background: var(--color-surf-2);
+        border-color: var(--color-text-faint);
+      }
+
       .download-btn-images {
         background: rgba(25,42,81,0.5);
         border: 1px solid var(--color-border);
@@ -563,6 +574,7 @@
       </div>
       <div id="images-grid" class="images-grid"></div>
       <div class="download-buttons">
+        <button id="unsave-download-all-btn" class="download-btn download-btn-unsave" style="display:none">Unsave &amp; Download All</button>
         <button id="download-all-btn" class="download-btn download-btn-all" style="display:none">Download All</button>
         <div class="btn-row">
           <button id="download-images-btn" class="download-btn download-btn-images" style="display:none">Images</button>

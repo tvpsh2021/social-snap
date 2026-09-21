@@ -20,7 +20,7 @@ function loadBackgroundScript() {
   // so they are accessible from test code
   const globalsToExpose = [
     'dataManager', 'downloadManager', 'extractingTabs',
-    'fbVideoUrls', 'cleanFbVideoUrl', 'parseEfgParam'
+    'fbVideoUrls', 'cleanFbVideoUrl', 'parseEfgParam', 'downloadAndUnsave'
   ];
 
   // Replace 'const dataManager' etc. with assignments that also set global
@@ -37,6 +37,10 @@ function loadBackgroundScript() {
       `global.${name} = function(`
     );
   });
+  bgSource = bgSource.replace(
+    /async\s+function\s+downloadAndUnsave\s*\(/,
+    'global.downloadAndUnsave = async function('
+  );
 
   eval(bgSource); // background.js has no module exports; eval is the only viable loader
 }

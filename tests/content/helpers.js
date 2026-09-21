@@ -21,7 +21,7 @@ function loadContentScript() {
   // Expose module-level constants so tests can read them and class methods can find them as globals
   [
     'SINGLE_POST_PATTERNS', 'HOMEPAGE_PATTERNS', 'GENERAL_CONFIG',
-    'CAROUSEL', 'IMAGE_FILTERS', 'SELECTORS',
+    'CAROUSEL', 'IMAGE_FILTERS', 'SAVE_ACTION', 'SELECTORS',
   ].forEach(name => {
     source = source.replace(
       new RegExp(`(?:const|let|var)\\s+${name}\\s*=`),

@@ -73,7 +73,10 @@ class ImageGrid {
     this.downloadAllBtnEl = document.getElementById('download-all-btn');
     this.downloadImagesBtnEl = document.getElementById('download-images-btn');
     this.downloadVideosBtnEl = document.getElementById('download-videos-btn');
+    this.unsaveDownloadAllBtnEl = document.getElementById('unsave-download-all-btn');
     this.currentImages = [];
+    this.unsaveAvailable = false;
+    this.unsaveHandler = null;
 
     this._initializeDownloadButtons();
   }
@@ -112,6 +115,13 @@ class ImageGrid {
     const hlsVideos = images.filter(i => i.mediaType === 'video' && i.isHLS);
 
     const downloadableCount = imageCount + directVideoCount;
+    if (this.unsaveAvailable && downloadableCount > 0) {
+      this.unsaveDownloadAllBtnEl.style.display = '';
+      this.unsaveDownloadAllBtnEl.textContent = `Unsave & Download All  ·  ${downloadableCount}`;
+    } else {
+      this.unsaveDownloadAllBtnEl.style.display = 'none';
+    }
+
     if (downloadableCount > 0) {
       this.downloadAllBtnEl.style.display = '';
       this.downloadAllBtnEl.textContent = `Download All  ·  ${downloadableCount}`;
@@ -296,7 +306,7 @@ class ImageGrid {
 
   _initializeDownloadButtons() {
     this.downloadAllBtnEl.addEventListener('click', async () => {
-      await this._downloadBatch(this.currentImages, this.downloadAllBtnEl, 'Download All');
+      await this._downloadBatch(this.getDownloadableItems(), this.downloadAllBtnEl, 'Download All');
     });
 
     this.downloadImagesBtnEl.addEventListener('click', async () => {
@@ -305,9 +315,38 @@ class ImageGrid {
     });
 
     this.downloadVideosBtnEl.addEventListener('click', async () => {
-      const videos = this.currentImages.filter(i => i.mediaType === 'video');
+      const videos = this.currentImages.filter(i => i.mediaType === 'video' && !i.isHLS);
       await this._downloadBatch(videos, this.downloadVideosBtnEl, 'Download Videos');
     });
+
+    this.unsaveDownloadAllBtnEl.addEventListener('click', async () => {
+      if (this.unsaveHandler) await this.unsaveHandler();
+    });
+  }
+
+  setUnsaveAction(available, handler = null) {
+    this.unsaveAvailable = available;
+    this.unsaveHandler = handler;
+    this._updateDownloadButtons();
+  }
+
+  getUnsaveButton() {
+    return this.unsaveDownloadAllBtnEl;
+  }
+
+  getDownloadableItems() {
+    return this.currentImages.filter(item => !item.isHLS);
+  }
+
+  async _requestBatchDownload(items) {
+    const response = await chrome.runtime.sendMessage({
+      action: BACKGROUND_MESSAGES.DOWNLOAD_IMAGES,
+      images: items
+    });
+
+    if (!response?.success) {
+      throw new Error(response?.error || 'The download could not be started.');
+    }
   }
 
   async _downloadBatch(items, btn, defaultLabel) {
@@ -319,10 +358,7 @@ class ImageGrid {
       btn.disabled = true;
       btn.textContent = defaultLabel;
 
-      await chrome.runtime.sendMessage({
-        action: BACKGROUND_MESSAGES.DOWNLOAD_IMAGES,
-        images: items
-      });
+      await this._requestBatchDownload(items);
 
       this._notifyDownloadSuccess();
 
@@ -441,6 +477,7 @@ class PopupController {
 
         if (response.images.length > 0) {
           this._displayImages(response.images);
+          await this._initializeSaveAction();
           if (this._extracting) {
             this._showExtractionProgress();
           }
@@ -469,6 +506,63 @@ class PopupController {
     this.statusDisplay.showContent();
     this.statusDisplay.updateImageCount(images);
     this.imageGrid.displayImages(images);
+  }
+
+  async _initializeSaveAction() {
+    const supportedPlatforms = new Set([PLATFORMS.THREADS, PLATFORMS.INSTAGRAM, PLATFORMS.X]);
+    const platform = getPlatformFromUrl(this.currentTab?.url || '');
+    if (!supportedPlatforms.has(platform)) return;
+
+    try {
+      const state = await chrome.tabs.sendMessage(this.currentTab.id, {
+        action: CONTENT_MESSAGES.GET_SAVE_STATE
+      });
+
+      if (state?.supported && state.saved) {
+        this.imageGrid.setUnsaveAction(true, () => this._downloadAndUnsave());
+      }
+    } catch (error) {
+      console.warn('Could not determine whether the post is saved:', error);
+    }
+  }
+
+  async _downloadAndUnsave() {
+    const button = this.imageGrid.getUnsaveButton();
+    const originalLabel = button.textContent;
+    let downloadsStarted = false;
+
+    try {
+      button.disabled = true;
+      button.textContent = 'Downloading & removing...';
+
+      const items = this.imageGrid.getDownloadableItems();
+      if (items.length === 0) throw new Error('No directly downloadable media was found.');
+
+      const response = await chrome.runtime.sendMessage({
+        action: BACKGROUND_MESSAGES.DOWNLOAD_AND_UNSAVE,
+        images: items,
+        tabId: this.currentTab.id,
+        platform: getPlatformFromUrl(this.currentTab.url)
+      });
+      if (!response?.success) {
+        downloadsStarted = response?.downloadsStarted === true;
+        throw new Error(response?.error || 'The post could not be removed from saved items.');
+      }
+
+      downloadsStarted = true;
+      this.imageGrid.setUnsaveAction(false);
+      this.statusDisplay.showSuccess('Downloads started and post removed from saved items.');
+    } catch (error) {
+      console.error('Download and unsave failed:', error);
+      button.disabled = false;
+      button.textContent = downloadsStarted
+        ? 'Downloaded — unsave failed'
+        : 'Failed — post kept saved';
+
+      setTimeout(() => {
+        button.textContent = originalLabel;
+      }, 3000);
+    }
   }
 
   _initializeEventListeners() {

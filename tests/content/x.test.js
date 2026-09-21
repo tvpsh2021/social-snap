@@ -32,6 +32,30 @@ function makeContentImage(src = 'https://pbs.twimg.com/media/abc.jpg?format=jpg&
   return img;
 }
 
+describe('XPlatform saved post actions', () => {
+  test('targets the bookmarked article matching the current status ID', async () => {
+    mockWindowLocation('/user/status/123');
+    document.body.innerHTML = `
+      <article data-testid="tweet">
+        <a href="/other/status/999">other</a>
+        <button data-testid="removeBookmark"></button>
+      </article>
+      <article data-testid="tweet">
+        <a href="/user/status/123">target</a>
+        <button id="unsave" data-testid="removeBookmark"></button>
+      </article>
+    `;
+    document.getElementById('unsave').addEventListener('click', event => event.currentTarget.remove());
+
+    const platform = new global.XPlatform();
+    expect(platform.findUnsaveButton().id).toBe('unsave');
+
+    await platform.unsavePost();
+
+    expect(platform.getSaveState().saved).toBe(false);
+  });
+});
+
 describe('XPlatform.extractImages() — no dialog', () => {
   test('returns empty array when in photo mode but no dialog is found', async () => {
     document.body.innerHTML = '<div>no dialog here</div>';

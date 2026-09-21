@@ -118,3 +118,15 @@ Each extracted media item has this shape:
   mediaType: String     // 'image' or 'video'
 }
 ```
+
+---
+
+## Saved Post Action
+
+For a saved Threads post, the popup shows **Unsave & Download All**. Unlike Instagram and X, Threads puts the Unsave action inside the post's More menu instead of exposing a persistent save control. `ThreadsPlatform` scopes the lookup to the post container matched from the current URL, briefly opens that container's More menu to inspect its `role="menuitem"` entries, then closes it. This avoids confusing the target post with reply menus on the same page.
+
+The combined action starts every directly downloadable item first. After Chrome accepts all downloads, it reopens the target post's More menu and clicks Unsave.
+
+The popup delegates this complete sequence to the background service worker. Closing the popup after starting the action does not prevent the content script from receiving the final Unsave request.
+
+The control lookup recognizes the known English and Traditional Chinese accessibility labels. If Threads changes or localizes this DOM contract, the combined action stays hidden rather than risking a click on an unrelated control.

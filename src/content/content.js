@@ -77,6 +77,14 @@ const IMAGE_FILTERS = {
   CAROUSEL_MIN_HEIGHT: 50
 };
 
+const SAVE_ACTION = {
+  CONFIRM_TIMEOUT: 3000,
+  CONFIRM_POLL_INTERVAL: 100,
+  // Meta localizes these accessibility labels. Keep the known English and
+  // Traditional Chinese variants explicit to avoid clicking unrelated controls.
+  UNSAVE_LABELS: ['Remove', 'Unsave', 'Remove bookmark', '移除', '取消儲存']
+};
+
 const SELECTORS = {
   THREADS: {
     CONTAINER: 'div[data-pressable-container="true"]',
@@ -197,6 +205,53 @@ class BasePlatform {
     return [];
   }
 
+  supportsSaveAction() {
+    return false;
+  }
+
+  findUnsaveButton() {
+    return null;
+  }
+
+  getSaveState() {
+    return {
+      supported: this.supportsSaveAction(),
+      saved: !!this.findUnsaveButton(),
+      platform: this.platformName
+    };
+  }
+
+  async unsavePost() {
+    const button = this.findUnsaveButton();
+    if (!button) {
+      throw new Error('The post is not saved or the save control could not be found.');
+    }
+
+    button.click();
+
+    const { CONFIRM_TIMEOUT, CONFIRM_POLL_INTERVAL } = SAVE_ACTION;
+    const maxPolls = Math.ceil(CONFIRM_TIMEOUT / CONFIRM_POLL_INTERVAL);
+    for (let poll = 0; poll <= maxPolls; poll++) {
+      if (!this.findUnsaveButton()) return;
+      if (poll < maxPolls) await wait(CONFIRM_POLL_INTERVAL);
+    }
+
+    throw new Error('Timed out while confirming that the post was removed from saved items.');
+  }
+
+  _findControlByAriaLabel(root, labels = SAVE_ACTION.UNSAVE_LABELS) {
+    if (!root) return null;
+
+    const normalizedLabels = new Set(labels.map(label => label.toLocaleLowerCase()));
+    const labeledElement = Array.from(root.querySelectorAll('[aria-label]')).find(element => {
+      const label = element.getAttribute('aria-label')?.trim().toLocaleLowerCase();
+      return label && normalizedLabels.has(label);
+    });
+
+    if (!labeledElement) return null;
+    return labeledElement.closest('button, [role="button"]') || labeledElement;
+  }
+
   createImageData(img, index) {
     const src = img.src;
     const alt = img.alt;
@@ -286,6 +341,136 @@ class ThreadsPlatform extends BasePlatform {
 
   isCurrentPlatform() {
     return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.THREADS]);
+  }
+
+  supportsSaveAction() {
+    return true;
+  }
+
+  findUnsaveButton() {
+    return this._findControlByAriaLabel(this._findTargetContainer());
+  }
+
+  async getSaveState() {
+    if (this.findUnsaveButton()) {
+      return { supported: true, saved: true, platform: this.platformName };
+    }
+
+    const menu = await this._openSaveMenu();
+    const saved = !!menu?.unsaveItem;
+    this._closeSaveMenu(menu);
+
+    return { supported: true, saved, platform: this.platformName };
+  }
+
+  async unsavePost() {
+    if (this.findUnsaveButton()) {
+      await super.unsavePost();
+      return;
+    }
+
+    const menu = await this._openSaveMenu();
+    if (!menu?.unsaveItem) {
+      this._closeSaveMenu(menu);
+      throw new Error('The Threads post is not saved or its Unsave menu item could not be found.');
+    }
+
+    menu.unsaveItem.click();
+
+    const { CONFIRM_TIMEOUT, CONFIRM_POLL_INTERVAL } = SAVE_ACTION;
+    const maxPolls = Math.ceil(CONFIRM_TIMEOUT / CONFIRM_POLL_INTERVAL);
+    for (let poll = 0; poll <= maxPolls; poll++) {
+      if (!menu.unsaveItem.isConnected) return;
+      if (poll < maxPolls) await wait(CONFIRM_POLL_INTERVAL);
+    }
+
+    throw new Error('Timed out while confirming that the Threads post was removed from saved items.');
+  }
+
+  _findMoreButton() {
+    const container = this._findTargetContainer();
+    if (!container) return null;
+
+    return Array.from(container.querySelectorAll('[role="button"][aria-haspopup="menu"][aria-expanded]'))
+      .find(button => !button.querySelector('[aria-label]')) || null;
+  }
+
+  _findOpenMenu() {
+    return Array.from(document.querySelectorAll('[role="menu"]')).find(menu => {
+      const style = window.getComputedStyle(menu);
+      return !menu.hidden
+        && style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && !!menu.querySelector('[role="menuitem"]');
+    }) || null;
+  }
+
+  _findUnsaveMenuItem(menu = this._findOpenMenu()) {
+    if (!menu) return null;
+
+    const labels = new Set(SAVE_ACTION.UNSAVE_LABELS.map(label => label.toLocaleLowerCase()));
+    return Array.from(menu.querySelectorAll('[role="menuitem"]')).find(item => {
+      const text = item.textContent?.trim().toLocaleLowerCase();
+      return text && labels.has(text);
+    }) || null;
+  }
+
+  async _openSaveMenu() {
+    const button = this._findMoreButton();
+    if (!button) return null;
+
+    const openedByExtension = button.getAttribute('aria-expanded') !== 'true';
+    if (openedByExtension) this._activateMoreButton(button);
+
+    const { CONFIRM_TIMEOUT, CONFIRM_POLL_INTERVAL } = SAVE_ACTION;
+    const maxPolls = Math.ceil(CONFIRM_TIMEOUT / CONFIRM_POLL_INTERVAL);
+    for (let poll = 0; poll <= maxPolls; poll++) {
+      const openMenu = this._findOpenMenu();
+      const unsaveItem = this._findUnsaveMenuItem(openMenu);
+      if (button.getAttribute('aria-expanded') === 'true' && openMenu) {
+        return { button, openedByExtension, unsaveItem };
+      }
+      if (poll < maxPolls) await wait(CONFIRM_POLL_INTERVAL);
+    }
+
+    return { button, openedByExtension, unsaveItem: null };
+  }
+
+  _closeSaveMenu(menu) {
+    if (menu?.openedByExtension && menu.button.getAttribute('aria-expanded') === 'true') {
+      this._activateMoreButton(menu.button);
+    }
+  }
+
+  _activateMoreButton(button) {
+    button.focus({ preventScroll: true });
+
+    const common = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      button: 0
+    };
+    const PointerEventClass = window.PointerEvent || MouseEvent;
+
+    button.dispatchEvent(new PointerEventClass('pointerdown', {
+      ...common,
+      buttons: 1,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true
+    }));
+    button.dispatchEvent(new MouseEvent('mousedown', { ...common, buttons: 1 }));
+    button.dispatchEvent(new PointerEventClass('pointerup', {
+      ...common,
+      buttons: 0,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true
+    }));
+    button.dispatchEvent(new MouseEvent('mouseup', { ...common, buttons: 0 }));
+    button.dispatchEvent(new MouseEvent('click', { ...common, buttons: 0 }));
   }
 
   _findTargetContainer() {
@@ -385,6 +570,15 @@ class InstagramPlatform extends BasePlatform {
 
   isCurrentPlatform() {
     return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.INSTAGRAM]);
+  }
+
+  supportsSaveAction() {
+    return true;
+  }
+
+  findUnsaveButton() {
+    const mainElement = document.querySelector(SELECTORS.INSTAGRAM.MAIN_ELEMENT);
+    return this._findControlByAriaLabel(mainElement);
   }
 
   async extractImages() {
@@ -1344,6 +1538,24 @@ class XPlatform extends BasePlatform {
     return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.X]);
   }
 
+  supportsSaveAction() {
+    return true;
+  }
+
+  findUnsaveButton() {
+    const statusId = window.location.pathname.match(/\/status\/([^/]+)/)?.[1];
+    const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+    const targetArticle = statusId
+      ? articles.find(article => article.querySelector(`a[href*="/status/${statusId}"]`))
+      : null;
+    if (targetArticle) {
+      return targetArticle.querySelector('[data-testid="removeBookmark"]');
+    }
+
+    const buttons = document.querySelectorAll('[data-testid="removeBookmark"]');
+    return buttons.length === 1 ? buttons[0] : null;
+  }
+
   async extractImages() {
     log('=== Starting X.com image extraction ===');
 
@@ -1989,10 +2201,39 @@ async function extractImages() {
   }
 }
 
-// === STOP SIGNAL LISTENER ===
-chrome.runtime.onMessage.addListener((request) => {
+// === POPUP ACTION LISTENER ===
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === 'stopExtraction') {
     stopFbExtractionRequested = true;
+    return;
+  }
+
+  if (request.action === CONTENT_MESSAGES.GET_SAVE_STATE) {
+    const platform = PlatformFactory.createPlatform();
+    Promise.resolve(platform?.getSaveState() || { supported: false, saved: false, platform: null })
+      .then(sendResponse)
+      .catch(error => {
+        logError('Failed to inspect saved post state:', error);
+        sendResponse({ supported: false, saved: false, platform: null });
+      });
+    return true;
+  }
+
+  if (request.action === CONTENT_MESSAGES.UNSAVE_POST) {
+    (async () => {
+      try {
+        const platform = PlatformFactory.createPlatform();
+        if (!platform?.supportsSaveAction()) {
+          throw new Error('Removing saved posts is not supported on this platform.');
+        }
+        await platform.unsavePost();
+        sendResponse({ success: true });
+      } catch (error) {
+        logError('Failed to remove post from saved items:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
   }
 });
 

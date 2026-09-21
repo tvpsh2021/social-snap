@@ -189,3 +189,11 @@ Each extracted media item has this shape:
   mediaType: String     // 'image' or 'video'
 }
 ```
+
+---
+
+## Saved Post Action
+
+For a saved Instagram post, the popup shows **Unsave & Download All**. The save-state lookup is scoped to `<main>` and uses the semantic Remove/Unsave accessibility label. The extension starts all direct downloads before clicking the control. If the control is absent or cannot be confirmed as removed, it does not report the combined action as successful.
+
+The popup delegates the download-and-unsave sequence to the background service worker, so closing the popup after starting it does not interrupt the action.

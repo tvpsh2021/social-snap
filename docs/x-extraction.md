@@ -218,3 +218,11 @@ Each extracted media item has this shape:
   mediaType: String     // 'image' or 'video'
 }
 ```
+
+---
+
+## Bookmarked Post Action
+
+For a bookmarked X post, the popup shows **Unsave & Download All**. `XPlatform` matches the current status ID to its tweet article and looks for X's `data-testid="removeBookmark"` control. It falls back to a document-wide control only when exactly one match exists. All direct downloads must be accepted by Chrome before the bookmark control is clicked.
+
+The popup delegates the download-and-unsave sequence to the background service worker, so closing the popup after starting it does not interrupt the action.

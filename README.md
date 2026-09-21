@@ -11,6 +11,7 @@ A Chrome extension for downloading images and videos from social media posts. Su
 - Auto-generates platform-specific filenames with timestamps
 - Filters out profile pictures and UI elements
 - Carousel/gallery navigation (auto-clicks through multi-media posts)
+- Download all direct media and remove a saved/bookmarked post in one action on Threads, Instagram, and X
 
 See [docs/platform-comparison.md](./docs/platform-comparison.md) for a detailed breakdown of supported media types per platform.
 
@@ -27,6 +28,9 @@ Navigate to an individual post on a supported platform, then click the extension
 
 - **Download all**: Click "Download All Images"
 - **Download one**: Click any thumbnail
+- **Unsave & Download All**: On a saved Threads, Instagram, or X post, start all direct downloads and then remove the post from saved items
+
+The combined action continues in the background after it is started, so the popup can be closed while Chrome creates the downloads and removes the post from saved items.
 
 Files are saved to your default download location with names like `threads_image_20240101120000_1.jpg`.
 

@@ -126,3 +126,72 @@ describe('ThreadsPlatform._findTargetContainer()', () => {
     expect(container.id).toBe('first');
   });
 });
+
+describe('ThreadsPlatform saved post actions', () => {
+  test('detects and clicks the target post remove control', async () => {
+    document.body.innerHTML = `
+      <div data-pressable-container="true">
+        <a href="/t/ABC123">target post</a>
+        <button id="unsave"><svg aria-label="Remove"></svg></button>
+      </div>
+    `;
+    mockWindowLocation('/t/ABC123');
+    document.getElementById('unsave').addEventListener('click', event => event.currentTarget.remove());
+
+    const platform = new global.ThreadsPlatform();
+    await expect(platform.getSaveState())
+      .resolves.toMatchObject({ supported: true, saved: true, platform: 'threads' });
+
+    await platform.unsavePost();
+
+    await expect(platform.getSaveState()).resolves.toMatchObject({ saved: false });
+  });
+
+  test('detects and clicks Unsave from the target post More menu', async () => {
+    document.body.innerHTML = `
+      <div role="menu" style="display:none">
+        <div role="menuitem">Stale hidden menu item</div>
+      </div>
+      <div data-pressable-container="true">
+        <a href="/t/ABC123">target post</a>
+        <div id="more" role="button" aria-haspopup="menu" aria-expanded="false"></div>
+        <div role="button" aria-haspopup="dialog" aria-expanded="false">Repost</div>
+      </div>
+    `;
+    mockWindowLocation('/t/ABC123');
+
+    let saved = true;
+    const moreButton = document.getElementById('more');
+    moreButton.addEventListener('click', () => {
+      const existingMenu = Array.from(document.querySelectorAll('[role="menu"]'))
+        .find(menu => window.getComputedStyle(menu).display !== 'none');
+      if (existingMenu) {
+        existingMenu.remove();
+        moreButton.setAttribute('aria-expanded', 'false');
+        return;
+      }
+
+      const menu = document.createElement('div');
+      menu.setAttribute('role', 'menu');
+      const item = document.createElement('div');
+      item.setAttribute('role', 'menuitem');
+      item.textContent = saved ? 'Unsave' : 'Save';
+      item.addEventListener('click', () => {
+        saved = false;
+        menu.remove();
+        moreButton.setAttribute('aria-expanded', 'false');
+      });
+      menu.appendChild(item);
+      document.body.appendChild(menu);
+      moreButton.setAttribute('aria-expanded', 'true');
+    });
+
+    const platform = new global.ThreadsPlatform();
+    await expect(platform.getSaveState()).resolves.toMatchObject({ saved: true });
+    expect(platform._findOpenMenu()).toBeNull();
+
+    await platform.unsavePost();
+
+    expect(saved).toBe(false);
+  });
+});
