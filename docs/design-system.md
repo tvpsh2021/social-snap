@@ -80,7 +80,7 @@ All colors are drawn from a single palette for cohesion. Never introduce colors 
 - **Secondary (Images / Videos):** Semi-transparent Space Indigo + Dusty Mauve text. Videos button uses Lilac text with a Lilac-tinted border.
 - Disabled: `opacity: 0.3`, `cursor: not-allowed`. Never change background color for disabled — just reduce opacity.
 - Active press: `transform: scale(0.975)`.
-- **Unsave & Download All:** Lilac-tinted elevated action shown above Download All only when a supported post is currently saved. It uses the existing surface, text, and translucent Lilac border tokens.
+- **Unsave & Download All:** Lilac-tinted elevated action shown above Download All. It is always present while media content is shown to keep the layout stable, starts disabled, and becomes enabled only after the current post is confirmed as saved. It uses the existing surface, text, and translucent Lilac border tokens.
 
 ### Count Pill (header)
 - Default: Dusty Mauve text on Space Indigo.

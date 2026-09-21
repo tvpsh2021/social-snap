@@ -115,12 +115,10 @@ class ImageGrid {
     const hlsVideos = images.filter(i => i.mediaType === 'video' && i.isHLS);
 
     const downloadableCount = imageCount + directVideoCount;
-    if (this.unsaveAvailable && downloadableCount > 0) {
-      this.unsaveDownloadAllBtnEl.style.display = '';
-      this.unsaveDownloadAllBtnEl.textContent = `Unsave & Download All  ·  ${downloadableCount}`;
-    } else {
-      this.unsaveDownloadAllBtnEl.style.display = 'none';
-    }
+    this.unsaveDownloadAllBtnEl.disabled = !this.unsaveAvailable || downloadableCount === 0;
+    this.unsaveDownloadAllBtnEl.textContent = downloadableCount > 0
+      ? `Unsave & Download All  ·  ${downloadableCount}`
+      : 'Unsave & Download All';
 
     if (downloadableCount > 0) {
       this.downloadAllBtnEl.style.display = '';
