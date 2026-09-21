@@ -54,7 +54,8 @@ const CAROUSEL = {
   },
   FACEBOOK: {
     INITIAL_WAIT: 1000,
-    WAIT_TIME: 1000,
+    MEDIA_CHANGE_TIMEOUT: 5000,
+    MEDIA_POLL_INTERVAL: 100,
     MAX_ATTEMPTS: 1000,
   },
   X: {
@@ -689,13 +690,89 @@ class FacebookPlatform extends BasePlatform {
     return window.location.hostname.includes(PLATFORM_HOSTNAMES[PLATFORMS.FACEBOOK]);
   }
 
+  _extractFbImageId(url) {
+    const match = url.match(/\/(\d+)_\d+/);
+    return match ? match[1] : null;
+  }
+
+  _getFbPhotoIdFromUrl() {
+    const queryId = new URLSearchParams(window.location.search).get('fbid');
+    if (queryId) return queryId;
+
+    const pathMatch = window.location.pathname.match(/\/photos\/(?:[^/]+\/)?(\d+)\/?$/);
+    return pathMatch ? pathMatch[1] : null;
+  }
+
+  _findFbPostImage(expectedImageId = null) {
+    const candidates = [];
+
+    for (const selector of SELECTORS.FACEBOOK.POST_IMAGES) {
+      for (const img of document.querySelectorAll(selector)) {
+        const rect = img.getBoundingClientRect();
+        if (rect.width > 200 && rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
+            !img.src.includes('profile') && !img.src.includes('icon') && !img.src.includes('static')) {
+          candidates.push({ img, area: rect.width * rect.height });
+        }
+      }
+    }
+
+    if (expectedImageId) {
+      const matchingCandidate = candidates.find(({ img }) => {
+        return this._extractFbImageId(img.currentSrc || img.src) === expectedImageId
+          || this._extractFbImageId(img.src) === expectedImageId;
+      });
+      if (matchingCandidate) return matchingCandidate.img;
+    }
+
+    candidates.sort((a, b) => b.area - a.area);
+    return candidates[0]?.img || null;
+  }
+
+  _getFbMediaSnapshot() {
+    if (this._isFbVideoPage()) {
+      const videoId = this._extractVideoIdFromUrl();
+      if (!videoId) return null;
+      return {
+        routeIdentity: `video:${videoId}`,
+        contentIdentity: `video:${videoId}`
+      };
+    }
+
+    const photoId = this._getFbPhotoIdFromUrl();
+    const image = this._findFbPostImage(photoId);
+    if (!image) return null;
+
+    const imageUrl = image.currentSrc || image.src;
+    return {
+      routeIdentity: `image:${photoId || this._extractFbImageId(imageUrl) || imageUrl}`,
+      contentIdentity: `image:${imageUrl}`
+    };
+  }
+
+  async _waitForFbMediaChange(previousSnapshot) {
+    const { MEDIA_CHANGE_TIMEOUT, MEDIA_POLL_INTERVAL } = CAROUSEL.FACEBOOK;
+    const maxPolls = Math.ceil(MEDIA_CHANGE_TIMEOUT / MEDIA_POLL_INTERVAL);
+
+    for (let poll = 0; poll < maxPolls && !stopFbExtractionRequested; poll++) {
+      const currentSnapshot = this._getFbMediaSnapshot();
+      const routeChanged = currentSnapshot?.routeIdentity !== previousSnapshot?.routeIdentity;
+      const contentChanged = currentSnapshot?.contentIdentity !== previousSnapshot?.contentIdentity;
+      if (currentSnapshot && routeChanged && contentChanged) {
+        return currentSnapshot;
+      }
+      await wait(MEDIA_POLL_INTERVAL);
+    }
+
+    return null;
+  }
+
   async navigateCarousel() {
     stopFbExtractionRequested = false;
     fbCarouselActive = true;
     log('Starting Facebook media navigation...');
 
     const collectedMedia = []; // { mediaType, fullSizeUrl, thumbnailUrl, alt, maxWidth, videoId? }
-    const collectedImageIds = new Set(); // for image dedup
+    const collectedImageKeys = new Set(); // for image dedup
     const collectedVideoIds = new Set(); // for video dedup
     let navigationCount = 0;
     const maxNavigations = CAROUSEL.FACEBOOK.MAX_ATTEMPTS;
@@ -707,47 +784,28 @@ class FacebookPlatform extends BasePlatform {
       });
     };
 
-    const extractFbImageId = (url) => {
-      const match = url.match(/\/(\d+)_\d+/);
-      return match ? match[1] : null;
-    };
-
     const tryCollectImage = () => {
       log('Taking Facebook image snapshot...');
-      const possibleSelectors = SELECTORS.FACEBOOK.POST_IMAGES;
-      let foundImage = null;
-
-      for (const selector of possibleSelectors) {
-        const images = document.querySelectorAll(selector);
-        for (const img of images) {
-          const rect = img.getBoundingClientRect();
-          if (rect.width > 200 && rect.height > IMAGE_FILTERS.MIN_HEIGHT &&
-              !img.src.includes('profile') && !img.src.includes('icon') && !img.src.includes('static')) {
-            foundImage = img;
-            break;
-          }
-        }
-        if (foundImage) break;
-      }
+      const photoId = this._getFbPhotoIdFromUrl();
+      const foundImage = this._findFbPostImage(photoId);
 
       if (!foundImage) {
         log('No suitable main image found');
         return 'none';
       }
 
-      const fbId = extractFbImageId(foundImage.src);
-      const isDuplicate = collectedImageIds.has(foundImage.src)
-        || collectedImageIds.has(foundImage.currentSrc)
-        || (fbId && collectedImageIds.has(fbId));
+      const imageUrl = foundImage.currentSrc || foundImage.src;
+      const fallbackId = this._extractFbImageId(imageUrl);
+      const imageKey = photoId
+        ? `photo:${photoId}`
+        : `cdn:${fallbackId || imageUrl}`;
 
-      if (isDuplicate) {
-        log('Duplicate image detected');
+      if (collectedImageKeys.has(imageKey)) {
+        log(`Duplicate image detected: ${imageKey}`);
         return 'duplicate';
       }
 
-      collectedImageIds.add(foundImage.src);
-      if (foundImage.currentSrc) collectedImageIds.add(foundImage.currentSrc);
-      if (fbId) collectedImageIds.add(fbId);
+      collectedImageKeys.add(imageKey);
 
       collectedMedia.push(this.createImageData(foundImage, collectedMedia.length));
       log(`✓ Collected image ${collectedMedia.length}: ${foundImage.src.substring(0, 60)}`);
@@ -821,6 +879,7 @@ class FacebookPlatform extends BasePlatform {
           break;
         }
 
+        const previousSnapshot = this._getFbMediaSnapshot();
         log(`Navigation attempt ${navigationCount + 1}: Clicking Next button`);
         try {
           nextButton.click();
@@ -829,7 +888,11 @@ class FacebookPlatform extends BasePlatform {
           if (parentButton) parentButton.click();
         }
 
-        await wait(CAROUSEL.FACEBOOK.WAIT_TIME);
+        const nextSnapshot = await this._waitForFbMediaChange(previousSnapshot);
+        if (!nextSnapshot) {
+          log('Timed out waiting for Facebook media to change, stopping');
+          break;
+        }
 
         let result;
         if (this._isFbVideoPage()) {

@@ -110,8 +110,11 @@ Facebook renders one photo at a time in the album viewer. The extension clicks t
 `navigateCarousel()` clicks `div[data-visualcompletion="ignore-dynamic"]:nth-of-type(2) .html-div` to advance. Configuration:
 
 - Max attempts: 1000 (safety ceiling; normal termination is duplicate detection or no Next button)
-- Wait between slides: 1000ms
-- Stops when: no Next button found, duplicate image detected, or user clicks Stop
+- Poll interval while waiting for a slide change: 100ms
+- Media change timeout: 5000ms
+- Stops when: no Next button is found, a changed slide matches previously collected media, the media change times out, or the user clicks Stop
+
+After clicking Next, the extractor waits for the Facebook photo or video ID in the page URL to change before collecting again. Seeing the same media during Facebook's transition is treated as "not changed yet", not as the end of the carousel.
 
 ### Incremental delivery
 
@@ -123,12 +126,11 @@ The popup sends `stopExtraction` directly to the content script via `chrome.tabs
 
 ### Image deduplication
 
-Three dedup keys per image:
-- `img.src`
-- `img.currentSrc`
-- Facebook image ID extracted via `/(\d+)_\d+/` regex from the URL
+The primary dedup key is the `fbid` from the current page URL. Unlike the numeric prefix in a Facebook CDN filename, `fbid` identifies the actual photo and does not collide when different album photos share a CDN filename prefix.
 
-When a duplicate is found, navigation stops (the album has looped).
+If the current URL has no `fbid`, extraction falls back to the Facebook image ID parsed from the CDN URL, then to the complete image URL.
+
+Duplicate detection runs only after the current media ID has changed. When the changed slide matches previously collected media, navigation stops because the album has looped.
 
 ---
 

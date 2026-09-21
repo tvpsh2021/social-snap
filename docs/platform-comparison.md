@@ -45,7 +45,7 @@ A side-by-side comparison of how each platform's media extraction works.
 
 | Aspect | Instagram | Threads | Facebook | X.com |
 |---|---|---|---|---|
-| Image dedup | `img.src` as map key | `img.src` as map key | src + currentSrc + Facebook image ID (`/\d+_\d+/` from URL) | `img.src` as map key |
+| Image dedup | `img.src` as map key | `img.src` as map key | Page `fbid`; falls back to CDN image ID or full URL | `img.src` as map key |
 | Video dedup | Cleaned URL (strip `bytestart`/`byteend`) + `efg` asset ID | N/A (direct `src`) | `video_id` from `efg` param (base64 JSON) | `video.poster` URL or element reference |
 
 ## Minimum Image Size

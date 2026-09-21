@@ -12,6 +12,7 @@ beforeEach(() => {
   document.body.innerHTML = '';
   document.head.innerHTML = '';
   jest.clearAllMocks();
+  chrome.runtime.sendMessage.mockReset();
   global.stopFbExtractionRequested = false;
   global.fbCarouselActive = false;
 });
@@ -119,6 +120,53 @@ describe('FacebookPlatform.extractImages()', () => {
 
     expect(platform.navigateCarousel).toHaveBeenCalled();
     expect(result).toHaveLength(2);
+  });
+});
+
+describe('FacebookPlatform.navigateCarousel()', () => {
+  test('waits for delayed media changes instead of treating the current image as a duplicate', async () => {
+    mockWindowLocation('/photo?fbid=111&set=pcb.999');
+
+    const main = document.createElement('div');
+    main.setAttribute('role', 'main');
+    const img = document.createElement('img');
+    img.src = 'https://scontent.fbcdn.net/v/111_1_photo.jpg';
+    mockRect(img, 400, 350);
+    main.appendChild(img);
+    document.body.appendChild(main);
+
+    const nextButton = document.createElement('button');
+    let clicked = false;
+    nextButton.addEventListener('click', () => {
+      clicked = true;
+    });
+
+    let pollCount = 0;
+    global.wait.mockImplementation(async () => {
+      if (!clicked) return;
+      pollCount++;
+      if (pollCount === 1) {
+        mockWindowLocation('/photo?fbid=222&set=pcb.999');
+      }
+      if (pollCount === 2) {
+        // Different Facebook photos can share the first numeric CDN filename segment.
+        img.src = 'https://scontent.fbcdn.net/v/111_2_photo.jpg';
+      }
+    });
+
+    const platform = new global.FacebookPlatform();
+    jest.spyOn(platform, '_findNavigationButton').mockImplementation(() => {
+      return clicked && pollCount >= 2 ? null : nextButton;
+    });
+
+    const result = await platform.navigateCarousel();
+
+    expect(result).toHaveLength(2);
+    expect(result.map(item => item.fullSizeUrl)).toEqual([
+      'https://scontent.fbcdn.net/v/111_1_photo.jpg',
+      'https://scontent.fbcdn.net/v/111_2_photo.jpg',
+    ]);
+    expect(global.wait).toHaveBeenCalledTimes(2);
   });
 });
 
