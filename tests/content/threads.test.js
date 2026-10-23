@@ -9,9 +9,19 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  document.head.innerHTML = '';
   document.body.innerHTML = '';
   jest.clearAllMocks();
 });
+
+function appendEmbeddedPost(post) {
+  const script = document.createElement('script');
+  script.type = 'application/json';
+  script.textContent = JSON.stringify({
+    require: [['ScheduledServerJS', 'handle', null, [{ data: { post } }]]]
+  });
+  document.head.appendChild(script);
+}
 
 describe('ThreadsPlatform.extractImages()', () => {
   test('returns empty array when no container is found', async () => {
@@ -80,6 +90,93 @@ describe('ThreadsPlatform.extractImages()', () => {
     expect(result[0].mediaType).toBe('video');
     expect(result[0].fullSizeUrl).toBe('https://example.com/video.mp4');
     expect(result[0].thumbnailUrl).toContain('cover.jpg');
+  });
+
+  test('video carousel with blob: src: uses MP4 URLs from embedded post data', async () => {
+    document.body.innerHTML = `
+      <div data-pressable-container="true">
+        <a href="/@user/post/ABC123"><span>post</span></a>
+        <img src="https://example.com/profile.jpg" alt="profile">
+        <video src="blob:https://www.threads.com/1111"></video>
+        <video src="blob:https://www.threads.com/2222"></video>
+      </div>
+    `;
+    appendEmbeddedPost({
+      code: 'ABC123',
+      media_type: 8,
+      carousel_media: [
+        {
+          media_type: 2,
+          image_versions2: { candidates: [{ url: 'https://scontent.cdninstagram.com/v/cover1.jpg', width: 720, height: 1280 }] },
+          video_versions: [{ type: 101, url: 'https://scontent.cdninstagram.com/o1/v/video1.mp4?bytestart=0&byteend=100' }]
+        },
+        {
+          media_type: 2,
+          image_versions2: { candidates: [{ url: 'https://scontent.cdninstagram.com/v/cover2.jpg', width: 720, height: 1280 }] },
+          video_versions: [{ type: 101, url: 'https://scontent.cdninstagram.com/o1/v/video2.mp4' }]
+        }
+      ]
+    });
+    mockWindowLocation('/@user/post/ABC123');
+
+    const platform = new global.ThreadsPlatform();
+    const result = await platform.extractImages();
+
+    expect(result).toHaveLength(2);
+    result.forEach(item => expect(item.mediaType).toBe('video'));
+    expect(result[0].fullSizeUrl).toBe('https://scontent.cdninstagram.com/o1/v/video1.mp4');
+    expect(result[0].thumbnailUrl).toContain('cover1.jpg');
+    expect(result[1].fullSizeUrl).toBe('https://scontent.cdninstagram.com/o1/v/video2.mp4');
+  });
+
+  test('post embedding another post\'s video: uses linked_inline_media instead of the cover image', async () => {
+    document.body.innerHTML = `
+      <div data-pressable-container="true">
+        <a href="/@user/post/ABC123"><span>post</span></a>
+        <img src="https://example.com/profile.jpg" alt="profile">
+        <video src="blob:https://www.threads.com/1111"></video>
+      </div>
+    `;
+    appendEmbeddedPost({
+      code: 'ABC123',
+      media_type: 19,
+      video_versions: null,
+      image_versions2: { candidates: [{ url: 'https://scontent.cdninstagram.com/v/cover.jpg', width: 720, height: 1280 }] },
+      text_post_app_info: {
+        linked_inline_media: {
+          code: 'LINKED1',
+          media_type: 2,
+          image_versions2: { candidates: [{ url: 'https://scontent.cdninstagram.com/v/cover.jpg', width: 720, height: 1280 }] },
+          video_versions: [{ type: 101, url: 'https://scontent.cdninstagram.com/o1/v/linked.mp4' }]
+        }
+      }
+    });
+    mockWindowLocation('/@user/post/ABC123');
+
+    const platform = new global.ThreadsPlatform();
+    const result = await platform.extractImages();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].mediaType).toBe('video');
+    expect(result[0].fullSizeUrl).toBe('https://scontent.cdninstagram.com/o1/v/linked.mp4');
+    expect(result[0].thumbnailUrl).toContain('cover.jpg');
+  });
+
+  test('video post with blob: src and no embedded data: skips the video', async () => {
+    document.body.innerHTML = `
+      <div data-pressable-container="true">
+        <a href="/t/ABC123"><span>post</span></a>
+        <img src="https://example.com/profile.jpg" alt="profile">
+        <img src="https://example.com/cover.jpg" alt="cover">
+        <video src="blob:https://www.threads.com/1111"></video>
+      </div>
+    `;
+    mockWindowLocation('/t/ABC123');
+
+    const platform = new global.ThreadsPlatform();
+    const result = await platform.extractImages();
+
+    expect(result).toHaveLength(0);
   });
 
   test('video post without src: skips video elements that have no src', async () => {

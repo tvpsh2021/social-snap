@@ -16,9 +16,22 @@ This document describes how the extension extracts media from Threads posts.
 
 `ThreadsPlatform.extractImages()` is synchronous (no page navigation required). The flow:
 
-1. Find the post container via `_findTargetContainer()`.
-2. Query all `img`, `picture img`, and `video` elements inside the container.
-3. Determine post type from what was found and build the media list.
+1. Parse the post ID from the current URL and look up the post in embedded hydration data via `_extractEmbeddedMediaByCode()` (shared with Instagram, defined on `BasePlatform`). If found, return that media list.
+2. Otherwise, fall back to DOM scraping: find the post container via `_findTargetContainer()`.
+3. Query all `img`, `picture img`, and `video` elements inside the container.
+4. Determine post type from what was found and build the media list.
+
+---
+
+## Primary Path: Embedded Hydration Data
+
+Threads includes the current post in an `application/json` script with the same shape as Instagram: an object whose `code` equals the post ID, carrying `carousel_media`, `image_versions2.candidates`, and `video_versions`.
+
+This path is required for videos. Threads plays videos through MSE, so `video.src` is a page-scoped `blob:` URL that `chrome.downloads` cannot fetch and that has no file extension. `video_versions` provides the direct `cdninstagram.com` MP4 URL. Item conversion rules are identical to Instagram (see `instagram-extraction.md`).
+
+Some posts embed another post's media (`media_type: 19`). Their own object only carries a cover image in `image_versions2` and `video_versions: null`; the real media is in `text_post_app_info.linked_inline_media`. When that object has media, the parser uses it as the source instead of the outer post.
+
+The payload is only present for the post that was server-rendered. After SPA navigation to a different post, the lookup by `code` returns nothing and extraction falls back to the DOM.
 
 ---
 
@@ -86,10 +99,11 @@ The `<picture>` wrapper is the reliable signal that distinguishes carousel image
 
 **Condition:** `videos.length > 0`.
 
-Threads exposes the real CDN URL directly in `video.src`. No blob URL workaround or performance entry scanning is needed (unlike Instagram).
+This is the DOM fallback, used only when embedded data is unavailable.
 
 For each `<video>`:
 - If `video.src` is empty, the video is skipped.
+- If `video.src` is a `blob:` URL (MSE playback), the video is skipped with a warning, because the blob cannot be downloaded.
 - The thumbnail is sourced from `coverImgs[index]`, where `coverImgs` is the list of `img` elements that are **not** inside a `<picture>`, with the first one (profile picture) removed.
 
 This index-based pairing assumes Threads renders one cover image per video, in the same order.

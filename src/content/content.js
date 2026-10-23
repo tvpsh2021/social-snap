@@ -330,6 +330,116 @@ class BasePlatform {
       maxWidth
     };
   }
+
+  // Meta platforms (Instagram, Threads) embed post data as JSON in the page, including
+  // direct CDN video URLs that are unavailable from the DOM when playback uses MSE blob: URLs.
+  _extractEmbeddedMediaByCode(shortcode) {
+    const hasMedia = (value) => Array.isArray(value?.carousel_media)
+      || Array.isArray(value?.image_versions2?.candidates)
+      || Array.isArray(value?.video_versions);
+
+    const findPost = (root) => {
+      const stack = [root];
+      const visited = new WeakSet();
+
+      while (stack.length > 0) {
+        const value = stack.pop();
+        if (!value || typeof value !== 'object' || visited.has(value)) continue;
+        visited.add(value);
+
+        if (value.code === shortcode && hasMedia(value)) return value;
+
+        Object.values(value).forEach(child => {
+          if (child && typeof child === 'object') stack.push(child);
+        });
+      }
+
+      return null;
+    };
+
+    let post = null;
+    for (const script of document.querySelectorAll('script[type="application/json"]')) {
+      const text = script.textContent || '';
+      if (!text.includes(shortcode) ||
+          (!text.includes('carousel_media') && !text.includes('image_versions2') && !text.includes('video_versions'))) {
+        continue;
+      }
+
+      try {
+        post = findPost(JSON.parse(text));
+      } catch {
+        continue;
+      }
+
+      if (post) break;
+    }
+
+    if (!post) return null;
+
+    // Threads posts that embed another post's media (media_type 19) only carry a cover
+    // image themselves; the actual media lives in linked_inline_media.
+    const linkedMedia = post.text_post_app_info?.linked_inline_media;
+    if (hasMedia(linkedMedia)) {
+      log(`Post ${shortcode} embeds media from post ${linkedMedia.code}, using linked media.`);
+      post = linkedMedia;
+    }
+
+    const items = Array.isArray(post.carousel_media) && post.carousel_media.length > 0
+      ? post.carousel_media
+      : [post];
+    const mediaData = [];
+
+    const getLargestCandidate = (candidates) => {
+      if (!Array.isArray(candidates)) return null;
+      return candidates.reduce((largest, candidate) => {
+        if (!candidate?.url) return largest;
+        if (!largest) return candidate;
+        const candidateArea = (candidate.width || 0) * (candidate.height || 0);
+        const largestArea = (largest.width || 0) * (largest.height || 0);
+        return candidateArea > largestArea ? candidate : largest;
+      }, null);
+    };
+
+    items.forEach((item) => {
+      const imageCandidate = getLargestCandidate(item.image_versions2?.candidates);
+      const videoCandidate = getLargestCandidate(item.video_versions);
+      const isVideo = item.media_type === 2 || !!videoCandidate;
+
+      if (isVideo && videoCandidate?.url) {
+        mediaData.push({
+          index: mediaData.length + 1,
+          alt: item.accessibility_caption || 'Video',
+          thumbnailUrl: imageCandidate?.url || item.display_uri || '',
+          fullSizeUrl: this._cleanVideoUrl(videoCandidate.url),
+          maxWidth: 0,
+          mediaType: 'video'
+        });
+      } else if (imageCandidate?.url || item.display_uri) {
+        const imageUrl = imageCandidate?.url || item.display_uri;
+        mediaData.push({
+          index: mediaData.length + 1,
+          alt: item.accessibility_caption || '',
+          thumbnailUrl: imageUrl,
+          fullSizeUrl: imageUrl,
+          maxWidth: imageCandidate?.width || item.original_width || 0,
+          mediaType: 'image'
+        });
+      }
+    });
+
+    return mediaData.length > 0 ? mediaData : null;
+  }
+
+  _cleanVideoUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      urlObj.searchParams.delete('bytestart');
+      urlObj.searchParams.delete('byteend');
+      return urlObj.toString();
+    } catch {
+      return url;
+    }
+  }
 }
 
 // === THREADS PLATFORM ===
@@ -473,14 +583,18 @@ class ThreadsPlatform extends BasePlatform {
     button.dispatchEvent(new MouseEvent('click', { ...common, buttons: 0 }));
   }
 
+  // Extract post ID from current URL (e.g. /@username/post/ABC123 or /t/ABC123)
+  _getPostIdFromUrl() {
+    const pathname = window.location.pathname;
+    const postIdMatch = pathname.match(/\/@[^/]+\/post\/([^/]+)/) || pathname.match(/\/t\/([^/]+)/);
+    return postIdMatch?.[1] || null;
+  }
+
   _findTargetContainer() {
     const allContainers = document.querySelectorAll(SELECTORS.THREADS.CONTAINER);
     if (allContainers.length === 0) return null;
 
-    // Extract post ID from current URL (e.g. /@username/post/ABC123 or /t/ABC123)
-    const pathname = window.location.pathname;
-    const postIdMatch = pathname.match(/\/@[^/]+\/post\/([^/]+)/) || pathname.match(/\/t\/([^/]+)/);
-    const postId = postIdMatch?.[1];
+    const postId = this._getPostIdFromUrl();
 
     if (postId) {
       const matched = Array.from(allContainers).find(container =>
@@ -498,6 +612,13 @@ class ThreadsPlatform extends BasePlatform {
 
   extractImages() {
     log('=== Starting Threads image extraction ===');
+
+    const postId = this._getPostIdFromUrl();
+    const embeddedMedia = postId ? this._extractEmbeddedMediaByCode(postId) : null;
+    if (embeddedMedia) {
+      log(`Extracted ${embeddedMedia.length} Threads media items from embedded data.`);
+      return embeddedMedia;
+    }
 
     const firstContainer = this._findTargetContainer();
     log('Target container found:', firstContainer);
@@ -536,6 +657,11 @@ class ThreadsPlatform extends BasePlatform {
       videos.forEach((video, index) => {
         if (!video.src) {
           log(`Video ${index + 1} has no src, skipping`);
+          return;
+        }
+        // MSE playback exposes a page-scoped blob: URL that chrome.downloads cannot fetch.
+        if (video.src.startsWith('blob:')) {
+          logWarn(`Video ${index + 1} uses a blob: src and no embedded video URL was found, skipping`);
           return;
         }
 
@@ -685,91 +811,7 @@ class InstagramPlatform extends BasePlatform {
     const shortcode = shortcodeMatch?.[1];
     if (!shortcode) return null;
 
-    const findPost = (root) => {
-      const stack = [root];
-      const visited = new WeakSet();
-
-      while (stack.length > 0) {
-        const value = stack.pop();
-        if (!value || typeof value !== 'object' || visited.has(value)) continue;
-        visited.add(value);
-
-        const hasMedia = Array.isArray(value.carousel_media)
-          || Array.isArray(value.image_versions2?.candidates)
-          || Array.isArray(value.video_versions);
-        if (value.code === shortcode && hasMedia) return value;
-
-        Object.values(value).forEach(child => {
-          if (child && typeof child === 'object') stack.push(child);
-        });
-      }
-
-      return null;
-    };
-
-    let post = null;
-    for (const script of document.querySelectorAll('script[type="application/json"]')) {
-      const text = script.textContent || '';
-      if (!text.includes(shortcode) ||
-          (!text.includes('carousel_media') && !text.includes('image_versions2') && !text.includes('video_versions'))) {
-        continue;
-      }
-
-      try {
-        post = findPost(JSON.parse(text));
-      } catch {
-        continue;
-      }
-
-      if (post) break;
-    }
-
-    if (!post) return null;
-
-    const items = Array.isArray(post.carousel_media) && post.carousel_media.length > 0
-      ? post.carousel_media
-      : [post];
-    const mediaData = [];
-
-    const getLargestCandidate = (candidates) => {
-      if (!Array.isArray(candidates)) return null;
-      return candidates.reduce((largest, candidate) => {
-        if (!candidate?.url) return largest;
-        if (!largest) return candidate;
-        const candidateArea = (candidate.width || 0) * (candidate.height || 0);
-        const largestArea = (largest.width || 0) * (largest.height || 0);
-        return candidateArea > largestArea ? candidate : largest;
-      }, null);
-    };
-
-    items.forEach((item) => {
-      const imageCandidate = getLargestCandidate(item.image_versions2?.candidates);
-      const videoCandidate = getLargestCandidate(item.video_versions);
-      const isVideo = item.media_type === 2 || !!videoCandidate;
-
-      if (isVideo && videoCandidate?.url) {
-        mediaData.push({
-          index: mediaData.length + 1,
-          alt: item.accessibility_caption || 'Video',
-          thumbnailUrl: imageCandidate?.url || item.display_uri || '',
-          fullSizeUrl: this._cleanVideoUrl(videoCandidate.url),
-          maxWidth: 0,
-          mediaType: 'video'
-        });
-      } else if (imageCandidate?.url || item.display_uri) {
-        const imageUrl = imageCandidate?.url || item.display_uri;
-        mediaData.push({
-          index: mediaData.length + 1,
-          alt: item.accessibility_caption || '',
-          thumbnailUrl: imageUrl,
-          fullSizeUrl: imageUrl,
-          maxWidth: imageCandidate?.width || item.original_width || 0,
-          mediaType: 'image'
-        });
-      }
-    });
-
-    return mediaData.length > 0 ? mediaData : null;
+    return this._extractEmbeddedMediaByCode(shortcode);
   }
 
   async _waitForPostMain() {
@@ -1030,17 +1072,6 @@ class InstagramPlatform extends BasePlatform {
       videoUrl = this._findVideoUrlInPerformance();
     }
     return videoUrl;
-  }
-
-  _cleanVideoUrl(url) {
-    try {
-      const urlObj = new URL(url);
-      urlObj.searchParams.delete('bytestart');
-      urlObj.searchParams.delete('byteend');
-      return urlObj.toString();
-    } catch {
-      return url;
-    }
   }
 
   _findNextButton(container) {

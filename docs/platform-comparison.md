@@ -18,8 +18,8 @@ A side-by-side comparison of how each platform's media extraction works.
 
 | Aspect | Instagram | Threads | Facebook | X.com |
 |---|---|---|---|---|
-| URL in DOM | Blob URL (MSE); hydration JSON includes direct image/video candidates | Direct CDN URL in `video.src` | Blob URL (MSE) for carousel videos; `<script>` tags contain DASH manifest for Reels | Direct `src` for GIFs; no `src` for regular videos |
-| Resolution method | Parse the current post's hydration JSON first; fall back to `performance.getEntriesByType('resource')` scanning for `.mp4` on `fbcdn.net`/`cdninstagram.com` | Read `video.src` directly | Reel: DASH manifest parsing from SSR `<script>` tags. Carousel video: `chrome.webRequest.onBeforeRequest` passively collects `.mp4` URLs from `*.fbcdn.net`, parses `efg` query param (base64 JSON with `video_id` and `bitrate`) | Fetch API interception (`video_info.variants` from GraphQL/REST responses) |
+| URL in DOM | Blob URL (MSE); hydration JSON includes direct image/video candidates | Blob URL (MSE); hydration JSON includes direct `video_versions` | Blob URL (MSE) for carousel videos; `<script>` tags contain DASH manifest for Reels | Direct `src` for GIFs; no `src` for regular videos |
+| Resolution method | Parse the current post's hydration JSON first; fall back to `performance.getEntriesByType('resource')` scanning for `.mp4` on `fbcdn.net`/`cdninstagram.com` | Parse the current post's hydration JSON (shared parser with Instagram); DOM fallback reads `video.src` and skips `blob:` URLs | Reel: DASH manifest parsing from SSR `<script>` tags. Carousel video: `chrome.webRequest.onBeforeRequest` passively collects `.mp4` URLs from `*.fbcdn.net`, parses `efg` query param (base64 JSON with `video_id` and `bitrate`) | Fetch API interception (`video_info.variants` from GraphQL/REST responses) |
 | `video.play()` needed | Yes (`preload=none`) | No | Yes (carousel videos need play trigger to start MSE download) | No |
 | GIF handling | N/A | N/A | N/A | Detect `tweet_video/` in `video.src`, download MP4 directly |
 | Fallback | None | None | None | Performance entries, then tweet URL for yt-dlp |
@@ -46,7 +46,7 @@ A side-by-side comparison of how each platform's media extraction works.
 | Aspect | Instagram | Threads | Facebook | X.com |
 |---|---|---|---|---|
 | Image dedup | `img.src` as map key | `img.src` as map key | Page `fbid`; falls back to CDN image ID or full URL | `img.src` as map key |
-| Video dedup | Cleaned URL (strip `bytestart`/`byteend`) + `efg` asset ID | N/A (direct `src`) | `video_id` from `efg` param (base64 JSON) | `video.poster` URL or element reference |
+| Video dedup | Cleaned URL (strip `bytestart`/`byteend`) + `efg` asset ID | N/A (one hydration item per video) | `video_id` from `efg` param (base64 JSON) | `video.poster` URL or element reference |
 
 ## Minimum Image Size
 
